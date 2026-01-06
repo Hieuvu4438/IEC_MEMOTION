@@ -1,0 +1,15 @@
+# WebSocket Backend Requirements
+# Python 3.8+
+
+# WebSocket Server
+websockets==12.0
+
+# Pose Estimation
+rtmlib==1.0.1
+
+# Computer Vision
+opencv-python==4.9.0.80
+numpy==1.24.3
+
+# Optional: For better performance
+# onnxruntime-gpu  # If you have NVIDIA GPU

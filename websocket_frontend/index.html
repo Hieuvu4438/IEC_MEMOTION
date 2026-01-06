@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧘 Pose Estimation - WebSocket Client</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🧘 Pose Estimation with WebSocket</h1>
+            <p class="subtitle">Real-time pose detection from webcam</p>
+        </header>
+
+        <!-- Control Panel -->
+        <div class="control-panel">
+            <div class="connection-status">
+                <span class="status-indicator" id="statusIndicator"></span>
+                <span id="statusText">Disconnected</span>
+            </div>
+            
+            <div class="controls">
+                <button id="connectBtn" class="btn btn-primary">Connect to Server</button>
+                <button id="startBtn" class="btn btn-success" disabled>Start Camera</button>
+                <button id="stopBtn" class="btn btn-danger" disabled>Stop Camera</button>
+            </div>
+
+            <div class="settings">
+                <label for="serverUrl">Server URL:</label>
+                <input type="text" id="serverUrl" value="ws://localhost:8765" placeholder="ws://localhost:8765">
+                
+                <label for="fpsLimit">FPS Limit:</label>
+                <input type="number" id="fpsLimit" value="15" min="1" max="30">
+            </div>
+        </div>
+
+        <!-- Video Display -->
+        <div class="video-container">
+            <div class="video-section">
+                <h3>📹 Webcam Input</h3>
+                <video id="webcam" autoplay playsinline></video>
+                <canvas id="inputCanvas" style="display:none;"></canvas>
+            </div>
+
+            <div class="video-section">
+                <h3>🤖 AI Processed Output</h3>
+                <img id="outputImage" src="" alt="Processed frame">
+                <div id="noOutput" class="no-output">
+                    <p>⏳ Waiting for processed frames...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info Panel -->
+        <div class="info-panel">
+            <div class="info-section">
+                <h3>📊 Statistics</h3>
+                <div class="stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Frames Processed:</span>
+                        <span class="stat-value" id="frameCount">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">FPS:</span>
+                        <span class="stat-value" id="fps">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Latency:</span>
+                        <span class="stat-value" id="latency">0 ms</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Keypoints Detected:</span>
+                        <span class="stat-value" id="keypointCount">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-section">
+                <h3>🎯 Detected Keypoints</h3>
+                <div id="keypointsList" class="keypoints-list">
+                    <p class="text-muted">No keypoints detected yet...</p>
+                </div>
+            </div>
+
+            <div class="info-section">
+                <h3>📐 Joint Angles</h3>
+                <div id="anglesList" class="angles-list">
+                    <p class="text-muted">No angles calculated yet...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Console Log -->
+        <div class="console">
+            <h3>📝 Console Log</h3>
+            <div id="consoleLog" class="console-log"></div>
+            <button id="clearLogBtn" class="btn btn-secondary btn-sm">Clear Log</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
