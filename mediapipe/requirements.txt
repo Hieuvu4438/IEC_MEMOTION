@@ -1,0 +1,16 @@
+mediapipe
+opencv-python
+numpy>=1.24.0
+scipy>=1.11.0
+
+# DTW for motion synchronization
+fastdtw>=0.3.4
+
+# Data handling
+pandas>=2.0.0
+
+# Visualization (optional, for advanced plotting)
+matplotlib>=3.7.0
+
+# Testing
+pytest>=7.4.0
