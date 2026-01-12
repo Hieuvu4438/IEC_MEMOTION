@@ -8,25 +8,29 @@ Test script để verify:
 3. So sánh tư thế real-time với reference pose
 
 Usage:
-    # Headless mode (no GUI) - cho server
-    python main_test.py --source video.mp4 --headless
+    # Auto-detect mode (tự động chọn GUI/headless)
+    python main_test.py --source video.mp4
+    
+    # Force GUI mode (local machine)
+    python main_test.py --source video.mp4 --display
+    
+    # Force headless mode (server)
     python main_test.py --source video.mp4 --headless --output results.csv
     
-    # GUI mode - cho máy có màn hình
+    # Webcam
     python main_test.py --source webcam
-    python main_test.py --source video.mp4
-    python main_test.py --source image.jpg --mode image
     
 Author: MEMOTION Team
-Version: 1.0.1
+Version: 1.1.0
 """
 
 import argparse
 import sys
 import time
 import csv
+import os
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 import numpy as np
 
 try:
@@ -44,6 +48,74 @@ from core import (
     normalize_skeleton,
     PoseLandmarkIndex,
 )
+
+
+def check_display_available() -> bool:
+    """
+    Kiểm tra xem có thể hiển thị GUI không.
+    
+    Returns:
+        bool: True nếu có display available.
+    """
+    # Check DISPLAY environment variable (Linux/Mac)
+    display = os.environ.get('DISPLAY')
+    
+    # Check if running in SSH without X forwarding
+    ssh_connection = os.environ.get('SSH_CONNECTION')
+    ssh_tty = os.environ.get('SSH_TTY')
+    
+    # Windows always has display
+    if sys.platform == 'win32':
+        return True
+    
+    # macOS typically has display
+    if sys.platform == 'darwin':
+        return True
+    
+    # Linux: check DISPLAY
+    if display:
+        return True
+    
+    # Check for Wayland
+    wayland = os.environ.get('WAYLAND_DISPLAY')
+    if wayland:
+        return True
+    
+    return False
+
+
+def safe_imshow(window_name: str, frame: np.ndarray) -> bool:
+    """
+    Hiển thị frame một cách an toàn.
+    
+    Args:
+        window_name: Tên cửa sổ.
+        frame: Frame cần hiển thị.
+        
+    Returns:
+        bool: True nếu hiển thị thành công.
+    """
+    try:
+        cv2.imshow(window_name, frame)
+        return True
+    except cv2.error as e:
+        return False
+
+
+def safe_waitkey(delay: int = 1) -> int:
+    """
+    Chờ phím nhấn một cách an toàn.
+    
+    Args:
+        delay: Thời gian chờ (ms).
+        
+    Returns:
+        int: Key code, -1 nếu lỗi.
+    """
+    try:
+        return cv2.waitKey(delay) & 0xFF
+    except cv2.error:
+        return -1
 
 
 class PoseVisualizer:
@@ -172,19 +244,21 @@ def download_models(models_dir: Path) -> tuple:
     return str(pose_model), str(face_model)
 
 
-def run_video_headless(
+def run_video_process(
     detector: VisionDetector,
     video_path: str,
+    display: bool = True,
     output_csv: Optional[str] = None,
     output_video: Optional[str] = None,
     sample_rate: int = 1
 ) -> List[Dict]:
     """
-    Xử lý video ở chế độ headless (không cần GUI).
+    Xử lý video với tùy chọn hiển thị GUI hoặc headless.
     
     Args:
         detector: VisionDetector đã khởi tạo.
         video_path: Đường dẫn video.
+        display: True để hiển thị GUI, False cho headless mode.
         output_csv: Đường dẫn file CSV output (optional).
         output_video: Đường dẫn video output với annotations (optional).
         sample_rate: Xử lý mỗi N frames (1 = tất cả frames).
@@ -203,22 +277,31 @@ def run_video_headless(
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     duration = frame_count / fps if fps > 0 else 0
     
+    mode_str = "Display Mode" if display else "Headless Mode"
+    
     print(f"\n{'='*60}")
-    print(f"VIDEO PROCESSING (Headless Mode)")
+    print(f"VIDEO PROCESSING ({mode_str})")
     print(f"{'='*60}")
     print(f"  File: {video_path}")
     print(f"  Resolution: {frame_width}x{frame_height}")
     print(f"  FPS: {fps:.2f}")
     print(f"  Duration: {duration:.2f}s ({frame_count} frames)")
     print(f"  Sample rate: 1/{sample_rate}")
+    if display:
+        print(f"\n  Controls:")
+        print(f"    [c] Capture new reference pose")
+        print(f"    [r] Reset reference pose")
+        print(f"    [SPACE] Pause/Resume")
+        print(f"    [q] Quit")
     print(f"{'='*60}\n")
     
     # Video writer nếu cần
     video_writer = None
     if output_video:
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out_fps = fps / sample_rate if sample_rate > 1 else fps
         video_writer = cv2.VideoWriter(
-            output_video, fourcc, fps / sample_rate,
+            output_video, fourcc, out_fps,
             (frame_width, frame_height)
         )
     
@@ -227,8 +310,23 @@ def run_video_headless(
     frame_idx = 0
     processed_count = 0
     start_time = time.time()
+    paused = False
+    display_failed = False
+    
+    # Window name
+    window_name = "MEMOTION - Video Processing"
     
     while True:
+        # Xử lý pause
+        if paused and display:
+            key = safe_waitkey(100)
+            if key == ord(' '):
+                paused = False
+                print("[INFO] Resumed")
+            elif key == ord('q'):
+                break
+            continue
+        
         ret, frame = cap.read()
         if not ret:
             break
@@ -250,6 +348,10 @@ def run_video_headless(
             "similarity": None,
         }
         
+        disparity = 0.0
+        similarity = 0.0
+        output_frame = frame.copy()
+        
         if result.has_pose():
             current_skeleton = result.pose_landmarks.to_numpy()
             
@@ -263,22 +365,64 @@ def run_video_headless(
             frame_result["disparity"] = disparity
             frame_result["similarity"] = similarity
             
-            # Vẽ lên video nếu cần
-            if video_writer:
-                output_frame = PoseVisualizer.draw_landmarks(frame, result)
-                output_frame = PoseVisualizer.draw_info(
-                    output_frame, disparity, similarity, fps
-                )
-                video_writer.write(output_frame)
+            # Vẽ skeleton và info
+            output_frame = PoseVisualizer.draw_landmarks(frame, result)
+            output_frame = PoseVisualizer.draw_info(
+                output_frame, disparity, similarity, fps
+            )
+        else:
+            # Vẽ thông báo không detect được pose
+            cv2.putText(
+                output_frame, "No pose detected", (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2
+            )
+        
+        # Thêm frame info
+        progress = (frame_idx / frame_count) * 100
+        cv2.putText(
+            output_frame,
+            f"Frame: {frame_idx}/{frame_count} ({progress:.1f}%)",
+            (10, frame_height - 10),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1
+        )
+        
+        # Ghi video output
+        if video_writer:
+            video_writer.write(output_frame)
+        
+        # Hiển thị GUI nếu được bật và chưa fail
+        if display and not display_failed:
+            success = safe_imshow(window_name, output_frame)
+            if not success:
+                display_failed = True
+                print("[WARNING] Display failed, switching to headless mode")
+                display = False
+            else:
+                # Xử lý phím nhấn
+                wait_time = max(1, int(1000 / fps))
+                key = safe_waitkey(wait_time)
+                
+                if key == ord('q'):
+                    print("[INFO] Quit by user")
+                    break
+                elif key == ord('c') and result.has_pose():
+                    reference_pose = result.pose_landmarks.to_numpy()
+                    print(f"[INFO] New reference pose captured at frame {frame_idx}")
+                elif key == ord('r'):
+                    reference_pose = None
+                    print("[INFO] Reference pose reset")
+                elif key == ord(' '):
+                    paused = True
+                    print("[INFO] Paused - press SPACE to resume")
         
         results.append(frame_result)
         processed_count += 1
         
-        # Progress indicator
-        if processed_count % 50 == 0:
-            progress = (frame_idx / frame_count) * 100
+        # Progress indicator (cho headless mode)
+        if not display and processed_count % 50 == 0:
             elapsed = time.time() - start_time
-            eta = (elapsed / processed_count) * (frame_count / sample_rate - processed_count)
+            remaining = frame_count - frame_idx
+            eta = (elapsed / processed_count) * (remaining / sample_rate)
             print(f"  Progress: {progress:.1f}% ({processed_count} frames, ETA: {eta:.1f}s)")
         
         frame_idx += 1
@@ -286,6 +430,12 @@ def run_video_headless(
     cap.release()
     if video_writer:
         video_writer.release()
+    
+    if display and not display_failed:
+        try:
+            cv2.destroyAllWindows()
+        except cv2.error:
+            pass
     
     elapsed = time.time() - start_time
     
@@ -414,63 +564,6 @@ def run_webcam_test(
     cv2.destroyAllWindows()
 
 
-def run_video_test(
-    detector: VisionDetector,
-    video_path: str
-) -> None:
-    """Chạy test với video file (cần GUI)."""
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        print(f"[ERROR] Không thể mở video: {video_path}")
-        return
-    
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    
-    print(f"\n[INFO] Đang xử lý video: {video_path}")
-    print(f"[INFO] FPS: {fps}, Total frames: {frame_count}")
-    
-    reference_pose = None
-    frame_idx = 0
-    
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        
-        timestamp_ms = int((frame_idx / fps) * 1000)
-        result = detector.process_frame(frame, timestamp_ms)
-        
-        if result.has_pose():
-            current_skeleton = result.pose_landmarks.to_numpy()
-            
-            if reference_pose is None:
-                reference_pose = current_skeleton
-                print(f"[INFO] Reference pose captured at frame {frame_idx}")
-            
-            disparity = compute_procrustes_distance(
-                current_skeleton, reference_pose
-            )
-            similarity = compute_procrustes_similarity(
-                current_skeleton, reference_pose
-            )
-            
-            output_frame = PoseVisualizer.draw_landmarks(frame, result)
-            output_frame = PoseVisualizer.draw_info(
-                output_frame, disparity, similarity, fps
-            )
-            
-            cv2.imshow("MEMOTION - Video Test", output_frame)
-        
-        frame_idx += 1
-        
-        if cv2.waitKey(int(1000/fps)) & 0xFF == ord('q'):
-            break
-    
-    cap.release()
-    cv2.destroyAllWindows()
-
-
 def run_image_test(
     detector: VisionDetector,
     image_path: str,
@@ -572,13 +665,20 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Headless mode (server without display)
-  python main_test.py --source video.mp4 --headless
+  # Auto-detect mode (tự động chọn GUI nếu có display)
+  python main_test.py --source video.mp4
+  
+  # Force display mode (bắt buộc hiển thị GUI)
+  python main_test.py --source video.mp4 --display
+  
+  # Force headless mode (không hiển thị, chỉ xử lý)
   python main_test.py --source video.mp4 --headless --output results.csv
   
-  # GUI mode (local machine with display)
+  # Webcam (luôn cần display)
   python main_test.py --source webcam
-  python main_test.py --source video.mp4
+  
+  # Xuất video với annotations
+  python main_test.py --source video.mp4 --output-video output.mp4
   
   # Unit tests only
   python main_test.py --mode test
@@ -597,22 +697,31 @@ Examples:
         default="video",
         help="Processing mode"
     )
-    parser.add_argument(
+    
+    # Display mode group (mutually exclusive)
+    display_group = parser.add_mutually_exclusive_group()
+    display_group.add_argument(
+        "--display",
+        action="store_true",
+        help="Force display mode (show GUI window)"
+    )
+    display_group.add_argument(
         "--headless",
         action="store_true",
-        help="Run in headless mode (no GUI display)"
+        help="Force headless mode (no GUI, for servers)"
     )
+    
     parser.add_argument(
         "--output", "-o",
         type=str,
         default=None,
-        help="Output CSV file for results (headless mode)"
+        help="Output CSV file for results"
     )
     parser.add_argument(
         "--output-video",
         type=str,
         default=None,
-        help="Output video file with annotations (headless mode)"
+        help="Output video file with annotations"
     )
     parser.add_argument(
         "--sample-rate",
@@ -629,9 +738,29 @@ Examples:
     
     args = parser.parse_args()
     
-    # Run unit tests first
+    # Run unit tests
     if args.mode == "test":
         run_unit_tests()
+        return
+    
+    # Determine display mode
+    if args.display:
+        use_display = True
+        print("[INFO] Display mode: FORCED ON (--display)")
+    elif args.headless:
+        use_display = False
+        print("[INFO] Display mode: FORCED OFF (--headless)")
+    else:
+        # Auto-detect
+        use_display = check_display_available()
+        if use_display:
+            print("[INFO] Display mode: AUTO (display detected)")
+        else:
+            print("[INFO] Display mode: AUTO (no display, running headless)")
+    
+    # Webcam requires display
+    if args.source.lower() == "webcam" and not use_display:
+        print("[ERROR] Webcam mode requires display. Use --display or run on local machine.")
         return
     
     # Setup model paths
@@ -654,24 +783,19 @@ Examples:
     try:
         with VisionDetector(config) as detector:
             if args.source.lower() == "webcam":
-                if args.headless:
-                    print("[ERROR] Webcam không hỗ trợ headless mode")
-                    return
                 run_webcam_test(detector)
             elif args.mode == "image":
-                run_image_test(detector, args.source, headless=args.headless)
+                run_image_test(detector, args.source, headless=not use_display)
             else:
-                # Video mode
-                if args.headless:
-                    run_video_headless(
-                        detector,
-                        args.source,
-                        output_csv=args.output,
-                        output_video=args.output_video,
-                        sample_rate=args.sample_rate
-                    )
-                else:
-                    run_video_test(detector, args.source)
+                # Video mode - unified function
+                run_video_process(
+                    detector,
+                    args.source,
+                    display=use_display,
+                    output_csv=args.output,
+                    output_video=args.output_video,
+                    sample_rate=args.sample_rate
+                )
                     
     except FileNotFoundError as e:
         print(f"[ERROR] {e}")

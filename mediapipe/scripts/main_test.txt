@@ -1,11 +1,21 @@
-# Chạy headless (không cần GUI)
-python main_test.py --source /home/haipd/IEC_MEMOTION/mediapipe/assets/reference_videos/lakshmi_Tadasana.mp4 --headless
+Cách sử dụng
+1. Auto-detect Mode (Khuyến nghị)
+bash# Tự động detect có display hay không
+python main_test.py --source video.mp4
+2. Force Display Mode (Local machine)
+bash# Bắt buộc hiển thị GUI
+python main_test.py --source video.mp4 --display
+3. Force Headless Mode (Server)
+bash# Không hiển thị GUI, chỉ xử lý
+python main_test.py --source video.mp4 --headless --output results.csv
+4. Xuất video với annotations
+bash# Có thể kết hợp với display hoặc headless
+python main_test.py --source video.mp4 --output-video output.mp4
+python main_test.py --source video.mp4 --display --output-video output.mp4
+Controls khi Display Mode
+KeyActioncCapture new reference poserReset reference poseSPACEPause/ResumeqQuit
+Logic hoạt động
 
-# Xuất kết quả ra CSV
-python main_test.py --source /home/haipd/IEC_MEMOTION/mediapipe/assets/reference_videos/lakshmi_Tadasana.mp4 --headless --output results.csv
-
-# Xuất video đã annotated (có vẽ skeleton)
-python main_test.py --source /home/haipd/IEC_MEMOTION/mediapipe/assets/reference_videos/lakshmi_Tadasana.mp4 --headless --output-video output.mp4
-
-# Xử lý nhanh hơn (mỗi 5 frames)
-python main_test.py --source video.mp4 --headless --sample-rate 5 --output results.csv
+Auto-detect: Kiểm tra biến môi trường DISPLAY, WAYLAND_DISPLAY, platform (Windows/Mac luôn có display)
+Fallback: Nếu display fail giữa chừng → tự động chuyển sang headless
+Safe functions: safe_imshow() và safe_waitkey() bắt exception để không crash
