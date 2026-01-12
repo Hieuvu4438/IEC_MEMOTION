@@ -1,0 +1,22 @@
+# Output files
+*.mp4
+*.csv
+results.csv
+output.mp4
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+venv/
+med_venv/
+env/
+
+# Model files (nếu file quá lớn)
+# mediapipe/models/*.task
+
+# IDE
+.vscode/
+.idea/

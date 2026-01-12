@@ -1,0 +1,11 @@
+# Chạy headless (không cần GUI)
+python main_test.py --source /home/haipd/IEC_MEMOTION/mediapipe/assets/reference_videos/lakshmi_Tadasana.mp4 --headless
+
+# Xuất kết quả ra CSV
+python main_test.py --source /home/haipd/IEC_MEMOTION/mediapipe/assets/reference_videos/lakshmi_Tadasana.mp4 --headless --output results.csv
+
+# Xuất video đã annotated (có vẽ skeleton)
+python main_test.py --source /home/haipd/IEC_MEMOTION/mediapipe/assets/reference_videos/lakshmi_Tadasana.mp4 --headless --output-video output.mp4
+
+# Xử lý nhanh hơn (mỗi 5 frames)
+python main_test.py --source video.mp4 --headless --sample-rate 5 --output results.csv
