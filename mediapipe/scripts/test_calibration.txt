@@ -1,0 +1,8 @@
+# Calibrate khuỷu tay trái với webcam
+python test_calibration.py --source webcam --joint left_elbow
+
+# Calibrate vai phải với video (headless)
+python test_calibration.py --source video.mp4 --joint right_shoulder --headless
+
+# Chạy unit tests
+python test_calibration.py --mode test
