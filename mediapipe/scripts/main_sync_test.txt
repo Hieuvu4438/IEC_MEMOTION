@@ -1,0 +1,12 @@
+# Sync với webcam và video mẫu
+python main_sync_test.py --user-source webcam --ref-video exercise.mp4
+
+# Sync với video user
+python main_sync_test.py --user-source user_video.mp4 --ref-video exercise.mp4 --joint left_elbow
+
+# Unit tests
+python main_sync_test.py --mode test
+
+D:\PROJECTS\IEC_MEMOTION\mediapipe\assets\reference_videos\Piyush_Tadasana.mp4
+
+D:\PROJECTS\IEC_MEMOTION\mediapipe\assets\reference_videos\Pranshul_Tadasana.mp4

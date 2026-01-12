@@ -1,0 +1,32 @@
+# Chạy đầy đủ với webcam + video mẫu
+python main_final.py --source webcam --ref-video exercise.mp4
+
+# Chạy headless (server)
+python main_final.py --source user_video.mp4 --ref-video exercise.mp4 --headless
+
+# Unit tests
+python main_final.py --mode test
+```
+
+### Cấu trúc project hoàn chỉnh:
+```
+memotion/
+├── core/
+│   ├── data_types.py      # Data classes
+│   ├── detector.py        # MediaPipe wrapper
+│   ├── procrustes.py      # Skeleton normalization
+│   ├── kinematics.py      # Angle calculation
+│   ├── synchronizer.py    # FSM + Wait-for-User
+│   └── dtw_analysis.py    # Weighted DTW
+├── modules/
+│   ├── calibration.py     # Safe-Max Calibration
+│   ├── target_generator.py # Rescale reference
+│   ├── video_engine.py    # Smart Video Player
+│   ├── pain_detection.py  # FACS Pain Detection
+│   └── scoring.py         # Multi-dim Scoring
+├── utils/
+│   └── logger.py          # Session Logging
+├── main_test.py           # Phase 1 test
+├── test_calibration.py    # Phase 2 test
+├── main_sync_test.py      # Phase 3 test
+└── main_final.py          # Complete integration

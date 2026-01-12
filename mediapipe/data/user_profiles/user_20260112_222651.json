@@ -1,0 +1,18 @@
+{
+  "user_id": "user_20260112_222651",
+  "name": "",
+  "age": 0,
+  "created_at": "2026-01-12T22:26:51.284441",
+  "last_calibration": "2026-01-12T22:26:55.682408",
+  "notes": "",
+  "joint_limits": {
+    "right_shoulder": {
+      "joint_type": "right_shoulder",
+      "max_angle": 57.09,
+      "min_angle": 47.25,
+      "confidence": 0.884,
+      "calibration_date": "2026-01-12T22:26:55.682398",
+      "num_samples": 151
+    }
+  }
+}
