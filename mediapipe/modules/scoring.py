@@ -49,20 +49,24 @@ class RepScore:
         stability_score: Điểm ổn định (0-100).
         flow_score: Điểm mượt mà (0-100).
         symmetry_score: Điểm cân bằng (0-100).
+        compensation_score: Điểm bù trừ - cao = ít bù trừ (0-100).
         total_score: Điểm tổng hợp (0-100).
         jerk_value: Giá trị Jerk.
         duration_ms: Thời gian thực hiện (ms).
         notes: Ghi chú.
+        compensation_detected: Các loại bù trừ phát hiện được.
     """
     rep_number: int
     rom_score: float = 0.0
     stability_score: float = 0.0
     flow_score: float = 0.0
     symmetry_score: float = 0.0
+    compensation_score: float = 100.0  # Mới: điểm cho việc không bù trừ
     total_score: float = 0.0
     jerk_value: float = 0.0
     duration_ms: int = 0
     notes: str = ""
+    compensation_detected: List[str] = field(default_factory=list)  # Mới
     
     def to_dict(self) -> dict:
         return {
@@ -71,10 +75,12 @@ class RepScore:
             "stability_score": round(self.stability_score, 1),
             "flow_score": round(self.flow_score, 1),
             "symmetry_score": round(self.symmetry_score, 1),
+            "compensation_score": round(self.compensation_score, 1),
             "total_score": round(self.total_score, 1),
             "jerk_value": round(self.jerk_value, 4),
             "duration_ms": self.duration_ms,
             "notes": self.notes,
+            "compensation_detected": self.compensation_detected,
         }
 
 
@@ -155,12 +161,13 @@ class HealthScorer:
         >>> report = scorer.compute_session_report()
     """
     
-    # Trọng số của từng thành phần
+    # Trọng số của từng thành phần - cập nhật có compensation
     SCORE_WEIGHTS = {
-        "rom": 0.35,
-        "stability": 0.25,
-        "flow": 0.25,
+        "rom": 0.30,           # Giảm để có chỗ cho compensation
+        "stability": 0.20,
+        "flow": 0.20,
         "symmetry": 0.15,
+        "compensation": 0.15,  # Mới: trừ điểm nếu bù trừ
     }
     
     # Ngưỡng Jerk để phát hiện mệt mỏi
@@ -194,6 +201,11 @@ class HealthScorer:
         
         # Pain events
         self._pain_events: List[Dict] = []
+        
+        # Compensation tracking - mới
+        self._shoulder_heights: List[Tuple[float, float]] = []  # (left_y, right_y)
+        self._hip_positions: List[Tuple[float, float]] = []  # (left_y, right_y)
+        self._torso_tilts: List[float] = []  # Góc nghiêng thân
     
     def start_session(
         self,
@@ -237,6 +249,10 @@ class HealthScorer:
         self._current_rep_phases = []
         self._left_angles = []
         self._right_angles = []
+        # Reset compensation tracking
+        self._shoulder_heights = []
+        self._hip_positions = []
+        self._torso_tilts = []
     
     def add_frame(
         self,
@@ -244,7 +260,8 @@ class HealthScorer:
         timestamp: float,
         phase: MotionPhase,
         left_angle: Optional[float] = None,
-        right_angle: Optional[float] = None
+        right_angle: Optional[float] = None,
+        pose_landmarks: Optional[np.ndarray] = None  # Mới: thêm landmarks để detect compensation
     ) -> None:
         """
         Thêm dữ liệu một frame.
@@ -255,6 +272,7 @@ class HealthScorer:
             phase: Pha hiện tại.
             left_angle: Góc bên trái (cho symmetry).
             right_angle: Góc bên phải (cho symmetry).
+            pose_landmarks: Full pose landmarks (33, 3) để detect compensation.
         """
         self._current_rep_angles.append(angle)
         self._current_rep_timestamps.append(timestamp)
@@ -264,6 +282,43 @@ class HealthScorer:
             self._left_angles.append(left_angle)
         if right_angle is not None:
             self._right_angles.append(right_angle)
+        
+        # Track compensation data nếu có landmarks
+        if pose_landmarks is not None and len(pose_landmarks) >= 25:
+            self._track_compensation_data(pose_landmarks)
+    
+    def _track_compensation_data(self, landmarks: np.ndarray) -> None:
+        """
+        Thu thập dữ liệu để phát hiện bù trừ.
+        
+        Các loại bù trừ cần phát hiện:
+        1. Vai không đều (shoulder hiking)
+        2. Nghiêng thân (trunk lean)
+        3. Xoay hông (hip rotation)
+        """
+        try:
+            # Lấy tọa độ vai (indices 11, 12)
+            left_shoulder_y = landmarks[11][1]
+            right_shoulder_y = landmarks[12][1]
+            self._shoulder_heights.append((left_shoulder_y, right_shoulder_y))
+            
+            # Lấy tọa độ hông (indices 23, 24)
+            left_hip_y = landmarks[23][1]
+            right_hip_y = landmarks[24][1]
+            self._hip_positions.append((left_hip_y, right_hip_y))
+            
+            # Tính góc nghiêng thân (từ mid-shoulder đến mid-hip)
+            mid_shoulder = (landmarks[11] + landmarks[12]) / 2
+            mid_hip = (landmarks[23] + landmarks[24]) / 2
+            
+            # Góc với vertical (trục y)
+            dx = mid_hip[0] - mid_shoulder[0]
+            dy = mid_hip[1] - mid_shoulder[1]
+            if abs(dy) > 1e-6:
+                tilt_angle = np.degrees(np.arctan2(dx, dy))
+                self._torso_tilts.append(tilt_angle)
+        except (IndexError, ValueError):
+            pass  # Skip nếu landmarks không hợp lệ
     
     def complete_rep(
         self,
@@ -307,7 +362,10 @@ class HealthScorer:
         # 4. Symmetry Score
         symmetry_score = self._calculate_symmetry_score()
         
-        # 5. Jerk
+        # 5. Compensation Score - MỚI
+        compensation_score, compensation_issues = self._calculate_compensation_score()
+        
+        # 6. Jerk
         jerk = self._calculate_jerk(angles, timestamps)
         self._jerk_values.append(jerk)
         
@@ -315,33 +373,40 @@ class HealthScorer:
         if self._baseline_jerk is None and jerk > 0:
             self._baseline_jerk = jerk
         
-        # Total Score
+        # Total Score - cập nhật có compensation
         total = (
             self.SCORE_WEIGHTS["rom"] * rom_score +
             self.SCORE_WEIGHTS["stability"] * stability_score +
             self.SCORE_WEIGHTS["flow"] * flow_score +
-            self.SCORE_WEIGHTS["symmetry"] * symmetry_score
+            self.SCORE_WEIGHTS["symmetry"] * symmetry_score +
+            self.SCORE_WEIGHTS["compensation"] * compensation_score
         )
         
         # Duration
         duration_ms = int((timestamps[-1] - timestamps[0]) * 1000) if len(timestamps) > 1 else 0
         
-        # Create score
+        # Create score - thêm compensation
         score = RepScore(
             rep_number=self._current_rep,
             rom_score=rom_score,
             stability_score=stability_score,
             flow_score=flow_score,
             symmetry_score=symmetry_score,
+            compensation_score=compensation_score,
             total_score=total,
             jerk_value=jerk,
             duration_ms=duration_ms,
+            compensation_detected=compensation_issues,
         )
         
         # Check fatigue
         fatigue = self._check_fatigue()
+        notes_list = []
         if fatigue != FatigueLevel.FRESH:
-            score.notes = f"Mệt mỏi: {fatigue.name}"
+            notes_list.append(f"Mệt mỏi: {fatigue.name}")
+        if compensation_issues:
+            notes_list.append(f"Bù trừ: {', '.join(compensation_issues)}")
+        score.notes = "; ".join(notes_list)
         
         self._rep_scores.append(score)
         self._reset_current_rep()
@@ -350,10 +415,12 @@ class HealthScorer:
     
     def _calculate_rom_score(self, angles: np.ndarray, target: float) -> float:
         """
-        Tính ROM Score.
+        Tính ROM Score - cải tiến để phát hiện chính xác hơn.
         
-        Công thức:
-            score = min(100, (max_achieved / target) × 100)
+        Đánh giá dựa trên nhiều yếu tố:
+        1. Max angle đạt được (40%)
+        2. Thời gian giữ gần target (30%)
+        3. Chất lượng đỉnh - không giật lên rồi xuống ngay (30%)
         
         Args:
             angles: Chuỗi góc trong rep.
@@ -365,10 +432,45 @@ class HealthScorer:
         if target <= 0:
             return 100.0
         
-        max_achieved = np.max(angles)
-        score = (max_achieved / target) * 100
+        if len(angles) < 5:
+            return 0.0
         
-        return min(100.0, max(0.0, score))
+        # 1. Max angle score (40%)
+        max_achieved = np.max(angles)
+        max_score = min(100.0, (max_achieved / target) * 100)
+        
+        # 2. Hold time score - thời gian giữ >= 80% target (30%)
+        threshold = target * 0.8
+        frames_above_threshold = np.sum(angles >= threshold)
+        # Yêu cầu tối thiểu 10% số frame phải ở trên threshold
+        min_frames_required = max(3, len(angles) * 0.1)
+        hold_ratio = min(1.0, frames_above_threshold / min_frames_required)
+        hold_score = hold_ratio * 100
+        
+        # 3. Peak quality score - kiểm tra đạt góc có ổn định không (30%)
+        # Tìm vùng xung quanh peak
+        peak_idx = np.argmax(angles)
+        window = max(3, len(angles) // 10)  # 10% số frame hoặc tối thiểu 3
+        start_idx = max(0, peak_idx - window)
+        end_idx = min(len(angles), peak_idx + window + 1)
+        peak_region = angles[start_idx:end_idx]
+        
+        if len(peak_region) >= 3:
+            # Độ ổn định của vùng peak (std thấp = tốt)
+            peak_std = np.std(peak_region)
+            # Chuẩn hóa: std < 5° = tốt (100), std > 20° = kém (0)
+            peak_quality_score = max(0, 100 - peak_std * 5)
+        else:
+            peak_quality_score = 50.0  # Default nếu không đủ data
+        
+        # Tổng hợp với trọng số
+        final_score = (
+            0.40 * max_score +
+            0.30 * hold_score +
+            0.30 * peak_quality_score
+        )
+        
+        return min(100.0, max(0.0, final_score))
     
     def _calculate_stability_score(
         self,
@@ -376,12 +478,12 @@ class HealthScorer:
         phases: List[MotionPhase]
     ) -> float:
         """
-        Tính Stability Score từ pha HOLD.
+        Tính Stability Score từ pha HOLD - cải tiến.
         
-        Công thức:
-            score = 100 - (std_deviation × 10)
-            
-        Std thấp = ổn định = điểm cao.
+        Đánh giá dựa trên:
+        1. Standard deviation trong pha HOLD (50%)
+        2. Số lần vượt ngưỡng dao động (30%)
+        3. Xu hướng giảm góc trong HOLD - dấu hiệu mệt (20%)
         
         Args:
             angles: Chuỗi góc.
@@ -397,14 +499,51 @@ class HealthScorer:
         ]
         
         if len(hold_angles) < 5:
-            return 80.0  # Default nếu không đủ data
+            # Không đủ data trong HOLD, đánh giá cả eccentric/concentric
+            if len(angles) < 5:
+                return 80.0  # Default
+            # Đánh giá độ mượt của toàn bộ chuyển động
+            overall_std = np.std(np.diff(angles))  # Std của velocity
+            return min(100.0, max(0.0, 100 - overall_std * 5))
         
-        std = np.std(hold_angles)
+        hold_arr = np.array(hold_angles)
         
-        # Chuẩn hóa: std < 2° = tuyệt vời, std > 10° = kém
-        score = 100 - (std * 10)
+        # 1. Standard deviation score (50%)
+        std = np.std(hold_arr)
+        # Chuẩn hóa: std < 2° = tuyệt vời (100), std > 10° = kém (0)
+        std_score = max(0, 100 - std * 10)
         
-        return min(100.0, max(0.0, score))
+        # 2. Oscillation count - số lần dao động vượt ngưỡng (30%)
+        mean_angle = np.mean(hold_arr)
+        oscillation_threshold = 3.0  # 3 độ
+        # Đếm số lần cross threshold
+        deviations = np.abs(hold_arr - mean_angle)
+        crossings = np.sum(deviations > oscillation_threshold)
+        # Cho phép tối đa 20% số frame vượt ngưỡng
+        max_allowed_crossings = max(1, len(hold_arr) * 0.2)
+        oscillation_ratio = min(1.0, crossings / max_allowed_crossings)
+        oscillation_score = (1 - oscillation_ratio) * 100
+        
+        # 3. Drift score - góc có giảm dần không (dấu hiệu mệt) (20%)
+        if len(hold_arr) >= 3:
+            # So sánh nửa đầu và nửa sau
+            first_half = np.mean(hold_arr[:len(hold_arr)//2])
+            second_half = np.mean(hold_arr[len(hold_arr)//2:])
+            drift = first_half - second_half  # Dương = góc giảm
+            # Cho phép giảm tối đa 5 độ
+            drift_penalty = min(1.0, max(0, drift) / 5.0)
+            drift_score = (1 - drift_penalty) * 100
+        else:
+            drift_score = 100.0
+        
+        # Tổng hợp
+        final_score = (
+            0.50 * std_score +
+            0.30 * oscillation_score +
+            0.20 * drift_score
+        )
+        
+        return min(100.0, max(0.0, final_score))
     
     def _estimate_flow_score(
         self,
@@ -412,11 +551,17 @@ class HealthScorer:
         timestamps: np.ndarray
     ) -> float:
         """
-        Ước tính Flow Score khi không có DTW.
+        Ước tính Flow Score khi không có DTW - cải tiến.
         
-        Dựa trên độ mượt của velocity.
+        Đánh giá dựa trên nhiều yếu tố:
+        1. Độ mượt của velocity (không giật) (40%)
+        2. Tính liên tục - không có jump đột ngột (30%)
+        3. Tỷ lệ velocity âm/dương hợp lý (30%)
+        
+        Returns:
+            float: Flow score (0-100)
         """
-        if len(angles) < 3:
+        if len(angles) < 5:
             return 70.0
         
         # Tính velocity
@@ -424,13 +569,43 @@ class HealthScorer:
         dt = np.where(dt < 1e-6, 1e-6, dt)
         velocity = np.diff(angles) / dt
         
-        # Flow cao = velocity ít biến thiên
-        velocity_std = np.std(velocity)
+        # 1. Velocity smoothness (40%)
+        # Std của acceleration (đạo hàm velocity) - thấp = mượt
+        if len(velocity) >= 3:
+            acceleration = np.diff(velocity) / dt[:-1]
+            accel_std = np.std(acceleration)
+            # Chuẩn hóa: accel_std < 50 = tốt, > 500 = kém
+            smoothness_score = max(0, 100 - accel_std * 0.2)
+        else:
+            smoothness_score = 70.0
         
-        # Chuẩn hóa
-        score = 100 - (velocity_std * 2)
+        # 2. Continuity - không có jump đột ngột (30%)
+        angle_diffs = np.abs(np.diff(angles))
+        max_allowed_jump = 15.0  # Tối đa 15 độ/frame
+        jumps = np.sum(angle_diffs > max_allowed_jump)
+        jump_ratio = jumps / len(angle_diffs) if len(angle_diffs) > 0 else 0
+        continuity_score = (1 - min(1.0, jump_ratio * 5)) * 100
         
-        return min(100.0, max(0.0, score))
+        # 3. Direction consistency (30%)
+        # Trong một pha, velocity nên chủ yếu cùng chiều
+        if len(velocity) >= 5:
+            # Đếm số lần đổi chiều
+            sign_changes = np.sum(np.abs(np.diff(np.sign(velocity))) > 0)
+            # Cho phép tối đa 30% số frame có đổi chiều
+            max_changes = len(velocity) * 0.3
+            direction_ratio = min(1.0, sign_changes / max(1, max_changes))
+            direction_score = (1 - direction_ratio) * 100
+        else:
+            direction_score = 70.0
+        
+        # Tổng hợp
+        final_score = (
+            0.40 * smoothness_score +
+            0.30 * continuity_score +
+            0.30 * direction_score
+        )
+        
+        return min(100.0, max(0.0, final_score))
     
     def _calculate_symmetry_score(self) -> float:
         """
@@ -456,6 +631,72 @@ class HealthScorer:
         score = 100 - (diff * 4)
         
         return min(100.0, max(0.0, score))
+    
+    def _calculate_compensation_score(self) -> Tuple[float, List[str]]:
+        """
+        Tính Compensation Score - phát hiện động tác bù trừ.
+        
+        Các loại bù trừ phổ biến trong phục hồi chức năng:
+        1. Shoulder hiking: Nhún vai lên để tăng góc giơ tay
+        2. Trunk lean: Nghiêng thân để "gian lận" góc
+        3. Hip shift: Xoay hông khi tập chi dưới
+        
+        Returns:
+            Tuple[float, List[str]]: (score, list of detected compensations)
+        """
+        issues = []
+        penalties = []
+        
+        # 1. Kiểm tra shoulder hiking (vai không đều)
+        if len(self._shoulder_heights) >= 5:
+            shoulder_diffs = [abs(left - right) for left, right in self._shoulder_heights]
+            avg_diff = np.mean(shoulder_diffs)
+            max_diff = np.max(shoulder_diffs)
+            
+            # Ngưỡng: chênh lệch vai > 0.05 (5% chiều cao frame) là đáng kể
+            if max_diff > 0.08:  # Bù trừ nặng
+                issues.append("Vai không đều (nặng)")
+                penalties.append(40)
+            elif max_diff > 0.05:  # Bù trừ nhẹ
+                issues.append("Vai không đều (nhẹ)")
+                penalties.append(20)
+            elif avg_diff > 0.03:  # Có xu hướng
+                penalties.append(10)
+        
+        # 2. Kiểm tra trunk lean (nghiêng thân)
+        if len(self._torso_tilts) >= 5:
+            torso_arr = np.array(self._torso_tilts)
+            avg_tilt = np.mean(np.abs(torso_arr))
+            max_tilt = np.max(np.abs(torso_arr))
+            tilt_change = np.max(torso_arr) - np.min(torso_arr)
+            
+            # Ngưỡng: nghiêng > 15 độ hoặc thay đổi > 20 độ trong rep
+            if max_tilt > 20 or tilt_change > 25:
+                issues.append("Nghiêng thân nhiều")
+                penalties.append(35)
+            elif max_tilt > 15 or tilt_change > 15:
+                issues.append("Nghiêng thân")
+                penalties.append(20)
+            elif avg_tilt > 10:
+                penalties.append(10)
+        
+        # 3. Kiểm tra hip asymmetry (xoay hông)
+        if len(self._hip_positions) >= 5:
+            hip_diffs = [abs(left - right) for left, right in self._hip_positions]
+            max_hip_diff = np.max(hip_diffs)
+            
+            # Ngưỡng: chênh lệch hông > 0.06 là đáng kể
+            if max_hip_diff > 0.08:
+                issues.append("Hông không cân bằng")
+                penalties.append(25)
+            elif max_hip_diff > 0.05:
+                penalties.append(15)
+        
+        # Tính điểm: bắt đầu từ 100, trừ penalties
+        total_penalty = sum(penalties)
+        score = max(0, 100 - total_penalty)
+        
+        return score, issues
     
     def _calculate_jerk(
         self,
@@ -549,13 +790,14 @@ class HealthScorer:
         """
         end_time = time.time()
         
-        # Average scores
+        # Average scores - cập nhật có compensation
         if self._rep_scores:
             average_scores = {
                 "rom": np.mean([r.rom_score for r in self._rep_scores]),
                 "stability": np.mean([r.stability_score for r in self._rep_scores]),
                 "flow": np.mean([r.flow_score for r in self._rep_scores]),
                 "symmetry": np.mean([r.symmetry_score for r in self._rep_scores]),
+                "compensation": np.mean([r.compensation_score for r in self._rep_scores]),
                 "total": np.mean([r.total_score for r in self._rep_scores]),
             }
         else:
@@ -644,6 +886,34 @@ class HealthScorer:
             recommendations.append(
                 "Khi giữ tư thế, bác hãy cố giữ yên hơn nhé. "
                 "Thở đều và tập trung."
+            )
+        
+        # Compensation recommendations - MỚI
+        compensation = avg_scores.get("compensation", 100)
+        if compensation < 70:
+            # Phân tích loại compensation phổ biến
+            all_compensations = []
+            for rep_score in self._rep_scores:
+                all_compensations.extend(rep_score.compensation_detected)
+            
+            if "Vai không đều" in " ".join(all_compensations) or "Vai không đều (nặng)" in all_compensations:
+                recommendations.append(
+                    "⚠️ Bác có xu hướng nhún vai khi tập. "
+                    "Hãy giữ vai thả lỏng, không nâng vai lên nhé!"
+                )
+            if "Nghiêng thân" in " ".join(all_compensations):
+                recommendations.append(
+                    "⚠️ Bác có nghiêng người khi tập. "
+                    "Hãy giữ lưng thẳng, không nghiêng sang bên nhé!"
+                )
+            if "Hông không cân bằng" in all_compensations:
+                recommendations.append(
+                    "⚠️ Hông bác bị lệch khi tập. "
+                    "Hãy đứng vững trên hai chân, phân bổ trọng lượng đều nhé!"
+                )
+        elif compensation < 85:
+            recommendations.append(
+                "Bác có chút bù trừ khi tập. Cố gắng giữ tư thế chuẩn hơn nhé!"
             )
         
         # Fatigue recommendations

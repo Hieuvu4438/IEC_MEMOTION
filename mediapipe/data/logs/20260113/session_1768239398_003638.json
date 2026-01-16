@@ -1,0 +1,50 @@
+{
+  "session_id": "session_1768239398",
+  "session_start": "2026-01-13T00:36:38.602361",
+  "session_end": "2026-01-13T00:38:35.191168",
+  "entries": [
+    {
+      "timestamp": "2026-01-13T00:36:38.602875",
+      "level": "INFO",
+      "category": "session",
+      "message": "Session started: Giơ tay (Arm Raise)",
+      "data": {
+        "session_id": "session_1768239398",
+        "exercise_name": "Giơ tay (Arm Raise)",
+        "user_id": "anonymous",
+        "start_time": "2026-01-13T00:36:38.602361"
+      },
+      "session_id": "session_1768239398"
+    },
+    {
+      "timestamp": "2026-01-13T00:38:35.190104",
+      "level": "INFO",
+      "category": "session",
+      "message": "Session ended",
+      "data": {
+        "end_time": "2026-01-13T00:38:35.190094",
+        "total_entries": 1
+      },
+      "session_id": "session_1768239398"
+    }
+  ],
+  "report": {
+    "session_id": "session_1768239398",
+    "start_time": 1768239398.6030202,
+    "end_time": 1768239515.1900558,
+    "duration_seconds": 116.58703565597534,
+    "exercise_name": "Giơ tay (Arm Raise)",
+    "total_reps": 0,
+    "rep_scores": [],
+    "average_scores": {},
+    "fatigue_analysis": {
+      "trend": "stable",
+      "fatigue_level": "FRESH",
+      "jerk_increase_percent": 0
+    },
+    "pain_events": [],
+    "recommendations": [
+      "Tuyệt vời! Bác đã đạt góc mục tiêu rất tốt!"
+    ]
+  }
+}

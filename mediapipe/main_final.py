@@ -1,19 +1,27 @@
 #!/usr/bin/env python3
 """
-MEMOTION - Complete Integration (Final)
+MEMOTION - Complete Integration (Final Version 2.0)
 
-Tích hợp hoàn chỉnh 4 giai đoạn:
-1. GĐ1: Nhận diện Pose + Procrustes
-2. GĐ2: Safe-Max Calibration 
-3. GĐ3: Motion Sync + Wait-for-User
-4. GĐ4: Scoring + Pain Detection + Fatigue
+Tích hợp hoàn chỉnh 4 giai đoạn với UI rõ ràng:
+1. PHASE 1: Pose Detection - Nhận diện tư thế, vẽ skeleton
+2. PHASE 2: Safe-Max Calibration - Đo giới hạn vận động
+3. PHASE 3: Motion Sync - Đồng bộ với video mẫu
+4. PHASE 4: Scoring & Analysis - Chấm điểm và phân tích
 
 Usage:
     python main_final.py --source webcam --ref-video exercise.mp4
     python main_final.py --mode test
 
+Controls:
+    SPACE: Pause/Resume hoặc Bắt đầu calibration
+    R: Restart
+    Q: Quit
+    1-6: Chọn khớp để đo (Phase 2)
+    ENTER: Xác nhận/Chuyển phase tiếp theo
+    ESC: Thoát
+
 Author: MEMOTION Team
-Version: 1.0.0
+Version: 2.0.0
 """
 
 import argparse
@@ -22,9 +30,10 @@ import os
 import time
 import threading
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Tuple
 from queue import Queue
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import Enum
 import numpy as np
 
 try:
@@ -37,15 +46,85 @@ from core import (
     VisionDetector, DetectorConfig, JointType, JOINT_DEFINITIONS,
     calculate_joint_angle, MotionPhase, SyncStatus, SyncState,
     MotionSyncController, create_arm_raise_exercise, create_elbow_flex_exercise,
-    compute_single_joint_dtw,
+    compute_single_joint_dtw, PoseLandmarkIndex,
 )
 from modules import (
     VideoEngine, PlaybackState, PainDetector, PainLevel,
-    HealthScorer, FatigueLevel,
+    HealthScorer, FatigueLevel, SafeMaxCalibrator, CalibrationState,
+    UserProfile,
 )
-from utils import SessionLogger
+from utils import (
+    SessionLogger, put_vietnamese_text, draw_skeleton, draw_panel,
+    draw_progress_bar, draw_phase_indicator, COLORS, draw_angle_arc,
+    combine_frames_horizontal,
+)
 
 
+class AppPhase(Enum):
+    """Các giai đoạn của ứng dụng."""
+    PHASE1_DETECTION = "phase1"      # Pose Detection
+    PHASE2_CALIBRATION = "phase2"    # Safe-Max Calibration
+    PHASE3_SYNC = "phase3"           # Motion Sync
+    PHASE4_SCORING = "phase4"        # Scoring & Analysis
+    COMPLETED = "completed"          # Hoàn thành
+
+
+# Mapping từ phím số sang JointType
+JOINT_KEY_MAPPING = {
+    ord('1'): JointType.LEFT_SHOULDER,
+    ord('2'): JointType.RIGHT_SHOULDER,
+    ord('3'): JointType.LEFT_ELBOW,
+    ord('4'): JointType.RIGHT_ELBOW,
+    ord('5'): JointType.LEFT_KNEE,
+    ord('6'): JointType.RIGHT_KNEE,
+}
+
+JOINT_NAMES = {
+    JointType.LEFT_SHOULDER: "Vai trai",
+    JointType.RIGHT_SHOULDER: "Vai phai",
+    JointType.LEFT_ELBOW: "Khuyu tay trai",
+    JointType.RIGHT_ELBOW: "Khuyu tay phai",
+    JointType.LEFT_KNEE: "Dau goi trai",
+    JointType.RIGHT_KNEE: "Dau goi phai",
+}
+
+
+@dataclass
+class AppState:
+    """Trạng thái toàn cục của ứng dụng."""
+    current_phase: AppPhase = AppPhase.PHASE1_DETECTION
+    is_running: bool = True
+    is_paused: bool = False
+    
+    # Phase 1 state
+    pose_detected: bool = False
+    detection_stable_count: int = 0
+    
+    # Phase 2 state
+    selected_joint: Optional[JointType] = None
+    calibration_complete: bool = False
+    user_max_angle: float = 0.0
+    
+    # Phase 3 state
+    sync_state: Optional[SyncState] = None
+    motion_phase: str = "idle"
+    
+    # Phase 4 state
+    rep_count: int = 0
+    current_score: float = 0.0
+    average_score: float = 0.0
+    total_score: float = 0.0
+    
+    # Common
+    user_angle: float = 0.0
+    target_angle: float = 0.0
+    pain_level: str = "NONE"
+    fatigue_level: str = "FRESH"
+    message: str = ""
+    warning: str = ""
+
+
+# Legacy compatibility
 @dataclass
 class DashboardState:
     rep_count: int = 0
@@ -78,6 +157,7 @@ class MemotionApp:
         self._is_paused = False
         self._analysis_queue = Queue(maxsize=5)
         self._user_angles = []
+        self._ref_angles = []  # Thêm: lưu reference angles từ video mẫu
     
     def setup(self):
         try:
@@ -161,8 +241,16 @@ class MemotionApp:
                         self._video_engine.play()
             
             ref_frame, ref_status = self._video_engine.get_frame()
-            self._scorer.add_frame(user_angle, current_time, sync_state.current_phase)
+            # Cập nhật: truyền pose_landmarks để detect compensation
+            pose_data = result.pose_landmarks.to_numpy() if result.has_pose() else None
+            self._scorer.add_frame(user_angle, current_time, sync_state.current_phase, pose_landmarks=pose_data)
             self._user_angles.append(user_angle)
+            # Thêm: Lưu reference angle từ sync_state để so sánh DTW
+            if sync_state.target_angle > 0:
+                self._ref_angles.append(sync_state.target_angle)
+            else:
+                # Fallback: dùng user angle nếu chưa có target (pha IDLE)
+                self._ref_angles.append(user_angle)
             
             if last_phase == MotionPhase.CONCENTRIC and sync_state.current_phase == MotionPhase.IDLE:
                 self._on_rep_complete()
@@ -222,7 +310,14 @@ class MemotionApp:
         self._dashboard.fatigue_level = scorer_status.get("fatigue_level", "FRESH")
     
     def _on_rep_complete(self):
-        dtw_result = compute_single_joint_dtw(self._user_angles[-50:], self._user_angles[-50:]) if len(self._user_angles) > 20 else None
+        # Fix: So sánh user_angles với ref_angles thay vì với chính nó
+        dtw_result = None
+        if len(self._user_angles) > 20 and len(self._ref_angles) > 20:
+            # Lấy 50 frames gần nhất để so sánh
+            user_seq = self._user_angles[-50:]
+            ref_seq = self._ref_angles[-50:]
+            dtw_result = compute_single_joint_dtw(user_seq, ref_seq)
+        
         target = self._dashboard.target_angle or 150
         rep_score = self._scorer.complete_rep(target, dtw_result)
         self._logger.log_rep(rep_score.rep_number, {"rom": rep_score.rom_score, "stability": rep_score.stability_score, "flow": rep_score.flow_score, "total": rep_score.total_score}, rep_score.jerk_value, rep_score.duration_ms)
@@ -232,6 +327,7 @@ class MemotionApp:
         self._video_engine.play()
         self._sync_controller.reset()
         self._user_angles = []
+        self._ref_angles = []  # Thêm: reset ref_angles
         self._dashboard = DashboardState()
     
     def _render_display(self, user_frame, ref_frame, detection_result):

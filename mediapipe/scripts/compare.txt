@@ -1,0 +1,15 @@
+# Activate virtual environment
+cd D:\PROJECTS\IEC_MEMOTION\mediapipe
+..\med_venv\Scripts\Activate.ps1
+
+# So sánh với webcam
+python compare.py --ref-video assets/reference_videos/exercise.mp4 --user webcam
+
+# So sánh với video user
+python compare.py --ref-video exercise.mp4 --user user_video.mp4
+
+# Threshold thấp để test (50%)
+python compare.py --ref-video exercise.mp4 --threshold 0.5
+
+# Chạy unit tests
+python compare.py --mode test
