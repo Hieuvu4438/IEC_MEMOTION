@@ -1,0 +1,13 @@
+mediapipe_be/
+├── core/                   # (Giữ nguyên các file core từ v2)
+├── modules/                # (Giữ nguyên các file modules từ v2)
+├── utils/                  # (Giữ nguyên các file utils từ v2)
+│
+├── service/                # LỚP GIAO TIẾP VỚI BACKEND (MỚI)
+│   ├── __init__.py
+│   ├── schemas.py          # Định nghĩa cấu trúc JSON đầu ra (Pydantic hoặc Dict)
+│   └── engine_service.py   # Class chính điều phối luồng (Thay thế main_v2.py)
+│
+├── models/                 # Chứa các file .task
+├── assets/                 # Video mẫu, config bài tập
+└── bridge_example.py       # File mẫu để Backend biết cách gọi code của bạn

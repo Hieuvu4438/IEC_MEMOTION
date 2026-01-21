@@ -1,0 +1,51 @@
+{
+  "session_id": "session_1768560384",
+  "session_start": "2026-01-16T17:46:24.628081",
+  "session_end": "2026-01-16T17:47:03.946944",
+  "entries": [
+    {
+      "timestamp": "2026-01-16T17:46:24.628081",
+      "level": "INFO",
+      "category": "session",
+      "message": "Session started: Gập khuỷu tay (Bicep Curl)",
+      "data": {
+        "session_id": "session_1768560384",
+        "exercise_name": "Gập khuỷu tay (Bicep Curl)",
+        "user_id": "anonymous",
+        "start_time": "2026-01-16T17:46:24.628081"
+      },
+      "session_id": "session_1768560384"
+    },
+    {
+      "timestamp": "2026-01-16T17:47:03.945904",
+      "level": "INFO",
+      "category": "session",
+      "message": "Session ended",
+      "data": {
+        "end_time": "2026-01-16T17:47:03.945904",
+        "total_entries": 1
+      },
+      "session_id": "session_1768560384"
+    }
+  ],
+  "report": {
+    "session_id": "session_1768560384",
+    "start_time": 1768560384.628082,
+    "end_time": 1768560423.9459045,
+    "duration_seconds": 39.31782245635986,
+    "exercise_name": "Gập khuỷu tay (Bicep Curl)",
+    "total_reps": 0,
+    "rep_scores": [],
+    "average_scores": {},
+    "fatigue_analysis": {
+      "trend": "stable",
+      "fatigue_level": "FRESH",
+      "jerk_increase_percent": 0
+    },
+    "pain_events": [],
+    "recommendations": [
+      "Tuyệt vời! Bác đã đạt góc mục tiêu rất tốt!"
+    ],
+    "user_max_angle": 139.58489990234375
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "session_id": "test_session",
+  "session_start": "2026-01-13T07:56:02.305155",
+  "session_end": "2026-01-13T07:56:02.306159",
+  "entries": [
+    {
+      "timestamp": "2026-01-13T07:56:02.306159",
+      "level": "INFO",
+      "category": "session",
+      "message": "Session started: test_exercise",
+      "data": {
+        "session_id": "test_session",
+        "exercise_name": "test_exercise",
+        "user_id": "anonymous",
+        "start_time": "2026-01-13T07:56:02.305155"
+      },
+      "session_id": "test_session"
+    },
+    {
+      "timestamp": "2026-01-13T07:56:02.306159",
+      "level": "INFO",
+      "category": "rep",
+      "message": "Rep 1: 85/100",
+      "data": {
+        "rep_number": 1,
+        "scores": {
+          "total": 85
+        },
+        "jerk": 0.0,
+        "duration_ms": 0
+      },
+      "session_id": "test_session"
+    },
+    {
+      "timestamp": "2026-01-13T07:56:02.306159",
+      "level": "INFO",
+      "category": "session",
+      "message": "Session ended",
+      "data": {
+        "end_time": "2026-01-13T07:56:02.306159",
+        "total_entries": 2
+      },
+      "session_id": "test_session"
+    }
+  ],
+  "report": {}
+}

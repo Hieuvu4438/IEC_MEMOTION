@@ -1,0 +1,12 @@
+{
+  "user_id": "user_1768984521",
+  "created_at": "20260121_153623",
+  "calibrated_joints": {
+    "left_shoulder": 91.3330307006836,
+    "right_shoulder": 118.66072082519531,
+    "left_elbow": 127.85144805908203,
+    "right_elbow": 165.54168701171875,
+    "left_knee": 165.203857421875,
+    "right_knee": 138.53973388671875
+  }
+}

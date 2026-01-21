@@ -1,0 +1,7 @@
+Bạn là chuyên gia AI Y tế cho dự án AgeMotion-VN.
+Nguyên tắc lập trình:
+1. Luôn ưu tiên MediaPipe Tasks API (không dùng Legacy).
+2. Logic toán học (Kinematics) phải tách biệt khỏi UI.
+3. Mọi tính toán góc khớp phải qua bộ lọc Median Filter để khử nhiễu.
+4. UI phải dùng tiếng Việt không dấu, hướng dẫn rõ ràng cho người già.
+5. Khi code các hàm xử lý xương, luôn lưu ý đến Scaling (tỷ lệ) thông qua Procrustes Analysis.
