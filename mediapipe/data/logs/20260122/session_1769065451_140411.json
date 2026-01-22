@@ -1,0 +1,97 @@
+{
+  "session_id": "session_1769065451",
+  "session_start": "2026-01-22T14:04:11.481567",
+  "session_end": "2026-01-22T14:09:19.379687",
+  "entries": [
+    {
+      "timestamp": "2026-01-22T14:04:11.483613",
+      "level": "INFO",
+      "category": "session",
+      "message": "Session started: Giơ tay (Arm Raise)",
+      "data": {
+        "session_id": "session_1769065451",
+        "exercise_name": "Giơ tay (Arm Raise)",
+        "user_id": "anonymous",
+        "start_time": "2026-01-22T14:04:11.481567"
+      },
+      "session_id": "session_1769065451"
+    },
+    {
+      "timestamp": "2026-01-22T14:07:04.512536",
+      "level": "INFO",
+      "category": "rep",
+      "message": "Rep 1: 52/100",
+      "data": {
+        "rep_number": 1,
+        "scores": {
+          "rom": 71.015549575135,
+          "stability": 37.222811841459354,
+          "flow": 43.67323302358881,
+          "total": 52.48387384555013
+        },
+        "jerk": 11125770005.567247,
+        "duration_ms": 172536
+      },
+      "session_id": "session_1769065451"
+    },
+    {
+      "timestamp": "2026-01-22T14:09:19.378687",
+      "level": "INFO",
+      "category": "session",
+      "message": "Session ended",
+      "data": {
+        "end_time": "2026-01-22T14:09:19.378687",
+        "total_entries": 2
+      },
+      "session_id": "session_1769065451"
+    }
+  ],
+  "report": {
+    "session_id": "session_1769065451",
+    "start_time": 1769065451.4846156,
+    "end_time": 1769065759.3786874,
+    "duration_seconds": 307.89407181739807,
+    "exercise_name": "Giơ tay (Arm Raise)",
+    "total_reps": 1,
+    "rep_scores": [
+      {
+        "rep_number": 1,
+        "rom_score": 71.0,
+        "stability_score": 37.2,
+        "flow_score": 43.7,
+        "symmetry_score": 85.0,
+        "compensation_score": 15,
+        "total_score": 52.5,
+        "jerk_value": 11125770005.5672,
+        "duration_ms": 172536,
+        "notes": "Bù trừ: Vai không đều (nặng), Nghiêng thân, Hông không cân bằng",
+        "compensation_detected": [
+          "Vai không đều (nặng)",
+          "Nghiêng thân",
+          "Hông không cân bằng"
+        ]
+      }
+    ],
+    "average_scores": {
+      "rom": 71.015549575135,
+      "stability": 37.222811841459354,
+      "flow": 43.67323302358881,
+      "symmetry": 85.0,
+      "compensation": 15.0,
+      "total": 52.48387384555013
+    },
+    "fatigue_analysis": {
+      "trend": "stable",
+      "fatigue_level": "FRESH",
+      "jerk_increase_percent": 0
+    },
+    "pain_events": [],
+    "recommendations": [
+      "Khi giữ tư thế, bác hãy cố giữ yên hơn nhé. Thở đều và tập trung.",
+      "⚠️ Bác có xu hướng nhún vai khi tập. Hãy giữ vai thả lỏng, không nâng vai lên nhé!",
+      "⚠️ Bác có nghiêng người khi tập. Hãy giữ lưng thẳng, không nghiêng sang bên nhé!",
+      "⚠️ Hông bác bị lệch khi tập. Hãy đứng vững trên hai chân, phân bổ trọng lượng đều nhé!"
+    ],
+    "user_max_angle": 158.2816619873047
+  }
+}

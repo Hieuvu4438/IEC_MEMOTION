@@ -1,4 +1,25 @@
-# Service layer for backend communication
+"""
+MEMOTION Backend Service Layer
+
+Cung cap:
+- MemotionEngine: Class chinh xu ly frame (stateful, multi-instance)
+- EngineConfig: Cau hinh cho engine
+- Schemas: Cac class JSON-serializable cho output
+
+Usage:
+    from service import MemotionEngine, EngineConfig, create_engine_for_user
+    
+    # Tao engine cho user
+    engine = MemotionEngine.create_instance(
+        config=EngineConfig(ref_video_path="./videos/exercise.mp4")
+    )
+    
+    # Xu ly frame
+    result = engine.process_frame(frame, timestamp_ms)
+    json_output = result.to_dict()
+    # json_output["phase"] = 1, 2, 3, or 4
+"""
+
 from .schemas import (
     # Enums
     PhaseStatus,
@@ -27,22 +48,39 @@ from .schemas import (
 )
 
 from .engine_service import (
+    # Main class (new name)
+    MemotionEngine,
+    # Backward compatible alias
     EngineService,
+    # Config and State
     EngineConfig,
     EngineState,
     AppPhase,
+    # Constants
     CALIBRATION_QUEUE,
     JOINT_POSITION_INSTRUCTIONS,
+    PHASE_NAMES,
+    # Factory function
+    create_engine_for_user,
 )
 
 __all__ = [
-    # Engine Service
-    'EngineService',
+    # ===== MAIN ENGINE (Recommended) =====
+    'MemotionEngine',
     'EngineConfig',
+    'create_engine_for_user',
+    
+    # ===== BACKWARD COMPATIBLE =====
+    'EngineService',  # Alias cua MemotionEngine
     'EngineState',
     'AppPhase',
+    
+    # ===== CONSTANTS =====
     'CALIBRATION_QUEUE',
     'JOINT_POSITION_INSTRUCTIONS',
+    'PHASE_NAMES',
+    
+    # ===== SCHEMAS =====
     # Enums
     'PhaseStatus',
     'MotionPhaseType',
@@ -59,9 +97,10 @@ __all__ = [
     'RepScore',
     'JointCalibrationResult',
     'FinalReportOutput',
-    # Composite
+    # Composite Output
     'EngineOutput',
-    # Helpers
+    
+    # ===== HELPERS =====
     'get_direction_hint',
     'get_feedback_text',
     'get_grade',

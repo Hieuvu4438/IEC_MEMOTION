@@ -440,18 +440,23 @@ class FinalReportOutput:
 @dataclass
 class EngineOutput:
     """
-    Output tổng hợp từ Engine cho mỗi frame.
+    Output tong hop tu Engine cho moi frame.
     
-    Chỉ một trong các field phase sẽ có giá trị tùy theo phase hiện tại.
+    Chi mot trong cac field phase se co gia tri tuy theo phase hien tai.
+    
+    BAT BUOC:
+    - "phase": So phase hien tai (1-4) - KEY BAT BUOC cho Backend
+    - "phase_name": Ten phase ("detection", "calibration", "sync", "scoring")
     
     Attributes:
-        current_phase: Phase hiện tại (1-4)
-        phase_name: Tên phase
-        detection: Output Phase 1 (nếu phase 1)
-        calibration: Output Phase 2 (nếu phase 2)
-        sync: Output Phase 3 (nếu phase 3)
-        final_report: Output Phase 4 (nếu phase 4)
-        error: Thông báo lỗi (nếu có)
+        current_phase: Phase hien tai (1-4) - ALIAS cua "phase"
+        phase_name: Ten phase
+        detection: Output Phase 1 (neu phase 1)
+        calibration: Output Phase 2 (neu phase 2)
+        sync: Output Phase 3 (neu phase 3)
+        final_report: Output Phase 4 (neu phase 4)
+        timestamp_ms: Timestamp cua frame (optional)
+        error: Thong bao loi (neu co)
     """
     current_phase: int = 1
     phase_name: str = "detection"
@@ -459,15 +464,40 @@ class EngineOutput:
     calibration: Optional[Dict] = None
     sync: Optional[Dict] = None
     final_report: Optional[Dict] = None
+    timestamp_ms: Optional[int] = None
     error: Optional[str] = None
     
+    @property
+    def phase(self) -> int:
+        """Alias cho current_phase - de Backend truy cap nhanh."""
+        return self.current_phase
+    
     def to_dict(self) -> Dict:
+        """
+        Convert sang JSON-serializable dict.
+        
+        Output BAT BUOC co:
+        - "phase": int (1-4)
+        - "phase_name": str
+        
+        Returns:
+            Dict JSON-serializable
+        """
         result = {
-            "current_phase": self.current_phase,
+            # KEY BAT BUOC
+            "phase": self.current_phase,
             "phase_name": self.phase_name,
+            # Backward compatible
+            "current_phase": self.current_phase,
+            # Error
             "error": self.error
         }
         
+        # Them timestamp neu co
+        if self.timestamp_ms is not None:
+            result["timestamp_ms"] = self.timestamp_ms
+        
+        # Them data cua phase tuong ung
         if self.detection:
             result["detection"] = self.detection
         if self.calibration:
@@ -478,6 +508,11 @@ class EngineOutput:
             result["final_report"] = self.final_report
         
         return result
+    
+    def to_json(self) -> str:
+        """Convert sang JSON string."""
+        import json
+        return json.dumps(self.to_dict(), ensure_ascii=False)
 
 
 # ==================== HELPER FUNCTIONS ====================

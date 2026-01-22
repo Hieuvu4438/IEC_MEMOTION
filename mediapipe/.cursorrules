@@ -1,7 +1,354 @@
-Bạn là chuyên gia AI Y tế cho dự án AgeMotion-VN.
-Nguyên tắc lập trình:
-1. Luôn ưu tiên MediaPipe Tasks API (không dùng Legacy).
-2. Logic toán học (Kinematics) phải tách biệt khỏi UI.
-3. Mọi tính toán góc khớp phải qua bộ lọc Median Filter để khử nhiễu.
-4. UI phải dùng tiếng Việt không dấu, hướng dẫn rõ ràng cho người già.
-5. Khi code các hàm xử lý xương, luôn lưu ý đến Scaling (tỷ lệ) thông qua Procrustes Analysis.
+# ============================================================================
+# MEMOTION - CURSOR RULES
+# He thong ho tro phuc hoi chuc nang cho nguoi gia
+# Version: 2.0.0
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# PHAN 1: NGUYEN TAC CO BAN (Basic Principles)
+# ----------------------------------------------------------------------------
+
+Ban la chuyen gia AI Y te cho du an MEMOTION (AgeMotion-VN).
+
+## 1.1 Nguyen tac lap trinh chung
+1. Luon uu tien MediaPipe Tasks API (KHONG dung Legacy API).
+2. Logic toan hoc (Kinematics) phai tach biet khoi UI.
+3. Moi tinh toan goc khop phai qua bo loc Median Filter de khu nhieu.
+4. UI phai dung tieng Viet khong dau, huong dan ro rang cho nguoi gia.
+5. Khi code cac ham xu ly xuong, luon luu y den Scaling (ty le) thong qua Procrustes Analysis.
+
+# ----------------------------------------------------------------------------
+# PHAN 2: NGUYEN TAC HEADLESS (Headless Principle) - BAT BUOC
+# ----------------------------------------------------------------------------
+
+## 2.1 Quy tac NGHIEM CAM cho Backend
+
+CAC FILE TRONG CAC THU MUC SAU **TUYET DOI KHONG DUOC CHUA**:
+- `/core/*`
+- `/modules/*`
+- `/service/*` (trong mediapipe_be)
+
+### Cac lenh/logic BI CAM:
+```python
+# KHONG DUOC SU DUNG trong /core, /modules, /service:
+cv2.imshow()
+cv2.waitKey()
+cv2.destroyWindow()
+cv2.destroyAllWindows()
+cv2.namedWindow()
+cv2.createTrackbar()
+cv2.setMouseCallback()
+plt.show()
+plt.figure()
+matplotlib.pyplot.*  # Tat ca cac lenh ve
+```
+
+### Logic ve UI bi cam:
+- Bat ky ham nao tao cua so hien thi
+- Bat ky ham nao cho nguoi dung nhap tu ban phim trong GUI
+- Bat ky ham nao ve truc tiep len frame/image
+
+## 2.2 Noi UI DUOC PHEP ton tai
+
+CHI DUOC PHEP su dung UI code trong:
+```
+mediapipe/
+├── main_v2.py              # ✅ DUOC PHEP - Main entry point voi UI
+├── main_test.py            # ✅ DUOC PHEP - Test script voi UI
+├── main_final.py           # ✅ DUOC PHEP - Main entry point cu
+├── test_calibration.py     # ✅ DUOC PHEP - Test script
+├── utils/
+│   └── visualization.py    # ✅ DUOC PHEP - Chua cac ham ve
+```
+
+## 2.3 Kiem tra truoc khi commit
+
+Truoc khi commit code, PHAI chay kiem tra:
+```bash
+# Kiem tra khong co cv2.imshow trong core/modules
+grep -r "cv2.imshow" core/ modules/
+grep -r "cv2.waitKey" core/ modules/
+grep -r "plt.show" core/ modules/
+
+# Ket qua mong doi: KHONG TIM THAY GI
+```
+
+# ----------------------------------------------------------------------------
+# PHAN 3: QUY TAC CHAM DIEM DA KHOP (Multi-Joint Scoring)
+# ----------------------------------------------------------------------------
+
+## 3.1 Yeu cau bat buoc cho Phase 3
+
+Logic cham diem tai Phase 3 (Motion Sync) PHAI ho tro:
+- So sanh DONG THOI nhieu khop (target_joints)
+- Su dung du lieu tu Phase 2 (calibrated_joints)
+- Tinh diem rieng cho tung khop
+- Tinh diem tong hop co trong so (weighted score)
+
+## 3.2 Cau truc du lieu multi-joint
+
+```python
+# Du lieu dau vao tu Phase 2
+calibrated_joints: Dict[JointType, float] = {
+    JointType.LEFT_SHOULDER: 102.3,   # max_angle
+    JointType.RIGHT_SHOULDER: 98.5,
+    JointType.LEFT_ELBOW: 145.0,
+    JointType.RIGHT_ELBOW: 142.0,
+    JointType.LEFT_KNEE: 120.0,
+    JointType.RIGHT_KNEE: 118.0,
+}
+
+# Tinh diem cho tung khop
+joint_scores: Dict[JointType, float] = {
+    JointType.LEFT_SHOULDER: 92.5,
+    JointType.RIGHT_SHOULDER: 88.0,
+    # ...
+}
+
+# Trong so tuy theo bai tap
+joint_weights: Dict[JointType, float] = {
+    JointType.LEFT_SHOULDER: 0.3,
+    JointType.RIGHT_SHOULDER: 0.3,
+    JointType.LEFT_ELBOW: 0.2,
+    JointType.RIGHT_ELBOW: 0.2,
+}
+
+# Diem tong hop
+weighted_score = sum(score * weight for (joint, score), (_, weight)
+                     in zip(joint_scores.items(), joint_weights.items()))
+```
+
+## 3.3 File can cap nhat khi thay doi logic cham diem
+
+- `modules/scoring.py` - Logic chinh
+- `core/synchronizer.py` - FSM dong bo
+- `mediapipe_be/service/schemas.py` - JSON output schema
+- `mediapipe_be/service/engine_service.py` - Backend service
+
+# ----------------------------------------------------------------------------
+# PHAN 4: QUY TAC PHAN HOI (Feedback Rules)
+# ----------------------------------------------------------------------------
+
+## 4.1 Cau truc JSON phan hoi loi BAT BUOC
+
+Moi thong tin loi tra ve PHAI la JSON voi cau truc chi tiet:
+
+```python
+@dataclass
+class JointError:
+    """Cau truc loi cho MOT khop."""
+    joint_type: str          # "left_shoulder", "right_shoulder", etc.
+    joint_name: str          # "Vai trai", "Vai phai", etc. (tieng Viet)
+    user_angle: float        # Goc hien tai cua nguoi dung
+    target_angle: float      # Goc muc tieu
+    error: float             # Sai so tuyet doi (do)
+    error_percent: float     # Sai so tuong doi (%)
+    direction_hint: str      # "raise" | "lower" | "hold" | "ok"
+    severity: str            # "minor" | "moderate" | "major"
+    score: float             # Diem cua khop nay (0-100)
+    weight: float            # Trong so cua khop trong bai tap
+```
+
+## 4.2 JSON output mau
+
+```json
+{
+  "joint_errors": [
+    {
+      "joint_type": "left_shoulder",
+      "joint_name": "Vai trai",
+      "user_angle": 85.5,
+      "target_angle": 90.0,
+      "error": 4.5,
+      "error_percent": 5.0,
+      "direction_hint": "raise",
+      "severity": "minor",
+      "score": 92.5,
+      "weight": 0.3
+    },
+    {
+      "joint_type": "right_elbow",
+      "joint_name": "Khuyu tay phai",
+      "user_angle": 120.0,
+      "target_angle": 135.0,
+      "error": 15.0,
+      "error_percent": 11.1,
+      "direction_hint": "raise",
+      "severity": "moderate",
+      "score": 75.0,
+      "weight": 0.2
+    }
+  ],
+  "overall_score": 85.5,
+  "feedback_text": "KHA",
+  "primary_direction": "raise"
+}
+```
+
+## 4.3 Nguong phan loai muc do sai so (severity)
+
+```python
+def get_severity(error_percent: float) -> str:
+    if error_percent <= 5.0:
+        return "minor"      # Sai so nho, co the chap nhan
+    elif error_percent <= 15.0:
+        return "moderate"   # Can dieu chinh
+    else:
+        return "major"      # Sai so lon, can sua ngay
+```
+
+## 4.4 Feedback text theo diem
+
+```python
+def get_feedback_text(score: float) -> str:
+    if score >= 90:
+        return "TUYET VOI!"
+    elif score >= 75:
+        return "TOT!"
+    elif score >= 60:
+        return "KHA"
+    else:
+        return "DIEU CHINH!"
+```
+
+# ----------------------------------------------------------------------------
+# PHAN 5: QUY TAC DONG BO HOA (Synchronization Rules)
+# ----------------------------------------------------------------------------
+
+## 5.1 Nguyen tac dong bo khi sua doi Kinematics
+
+Khi sua doi BAT KY logic nao trong cac file sau:
+- `core/kinematics.py`
+- `core/procrustes.py`
+- `core/dtw_analysis.py`
+- `core/synchronizer.py`
+
+PHAI dam bao cap nhat DONG BO cho:
+
+### 5.1.1 Phien ban Testing (mediapipe/)
+```
+mediapipe/
+├── core/kinematics.py        # ← SUA O DAY
+├── main_v2.py                # ← KIEM TRA TUONG THICH
+├── main_test.py              # ← KIEM TRA TUONG THICH
+└── test_calibration.py       # ← KIEM TRA TUONG THICH
+```
+
+### 5.1.2 Phien ban Backend (mediapipe_be/)
+```
+mediapipe_be/
+├── core/kinematics.py        # ← COPY/SYNC TU mediapipe/core/
+├── service/engine_service.py # ← KIEM TRA TUONG THICH
+└── service/schemas.py        # ← CAP NHAT NEU CAN
+```
+
+## 5.2 Checklist dong bo
+
+Khi sua doi Kinematics, PHAI kiem tra:
+
+```markdown
+[ ] 1. Cap nhat file goc trong mediapipe/core/
+[ ] 2. Copy file sang mediapipe_be/core/ (neu can)
+[ ] 3. Chay test: python main_test.py --mode test
+[ ] 4. Chay test: python main_v2.py --mode test
+[ ] 5. Chay test: cd mediapipe_be && python bridge_example.py
+[ ] 6. Kiem tra JSON output tuong thich voi schemas.py
+[ ] 7. Cap nhat version trong __init__.py neu la thay doi lon
+```
+
+## 5.3 Cac file PHAI giu dong bo
+
+| File trong mediapipe/ | File trong mediapipe_be/ | Ghi chu |
+|-----------------------|--------------------------|---------|
+| `core/kinematics.py` | `core/kinematics.py` | PHAI GIONG NHAU |
+| `core/procrustes.py` | `core/procrustes.py` | PHAI GIONG NHAU |
+| `core/dtw_analysis.py` | `core/dtw_analysis.py` | PHAI GIONG NHAU |
+| `core/synchronizer.py` | `core/synchronizer.py` | PHAI GIONG NHAU |
+| `core/data_types.py` | `core/data_types.py` | PHAI GIONG NHAU |
+| `core/detector.py` | `core/detector.py` | PHAI GIONG NHAU |
+| `modules/calibration.py` | `modules/calibration.py` | PHAI GIONG NHAU |
+| `modules/scoring.py` | `modules/scoring.py` | PHAI GIONG NHAU |
+| `modules/pain_detection.py` | `modules/pain_detection.py` | PHAI GIONG NHAU |
+
+# ----------------------------------------------------------------------------
+# PHAN 6: CAU TRUC JSON OUTPUT CHUAN
+# ----------------------------------------------------------------------------
+
+## 6.1 EngineOutput - Output chinh cua Backend
+
+```python
+@dataclass
+class EngineOutput:
+    current_phase: int           # 1-4
+    phase_name: str              # "detection" | "calibration" | "sync" | "scoring"
+    detection: DetectionOutput   # Phase 1 data
+    calibration: CalibrationOutput  # Phase 2 data
+    sync: SyncOutput             # Phase 3 data
+    final_report: FinalReportOutput  # Phase 4 data
+    timestamp_ms: int
+    error: Optional[str]
+```
+
+## 6.2 Danh sach Joint Types
+
+```python
+JOINT_NAMES_VI = {
+    "left_shoulder": "Vai trai",
+    "right_shoulder": "Vai phai",
+    "left_elbow": "Khuyu tay trai",
+    "right_elbow": "Khuyu tay phai",
+    "left_knee": "Dau goi trai",
+    "right_knee": "Dau goi phai",
+}
+```
+
+# ----------------------------------------------------------------------------
+# PHAN 7: CODING CONVENTIONS
+# ----------------------------------------------------------------------------
+
+## 7.1 Naming conventions
+- Classes: PascalCase (VisionDetector, HealthScorer)
+- Functions/methods: snake_case (calculate_joint_angle, process_frame)
+- Constants: UPPER_SNAKE_CASE (CALIBRATION_QUEUE, JOINT_DEFINITIONS)
+- Type hints: Bat buoc cho public functions
+
+## 7.2 Documentation
+- Docstrings: Google style
+- Comments: Tieng Viet hoac Tieng Anh, nhat quan trong file
+- Type hints: Bat buoc
+
+## 7.3 Error handling
+- Dung specific exceptions
+- Log errors voi context day du
+- Tra ve JSON error structure khi can
+
+# ----------------------------------------------------------------------------
+# PHAN 8: QUICK REFERENCE
+# ----------------------------------------------------------------------------
+
+## 8.1 Cac file quan trong
+
+| File | Chuc nang |
+|------|-----------|
+| `main_v2.py` | Entry point chinh (co UI) |
+| `mediapipe_be/service/engine_service.py` | Entry point backend (khong UI) |
+| `core/kinematics.py` | Tinh goc khop |
+| `modules/scoring.py` | Cham diem da chieu |
+| `modules/calibration.py` | Safe-Max Calibration |
+
+## 8.2 Lenh test nhanh
+
+```bash
+# Test UI version
+python main_v2.py --mode test
+
+# Test backend
+cd mediapipe_be && python bridge_example.py
+
+# Kiem tra headless compliance
+grep -r "cv2.imshow\|cv2.waitKey\|plt.show" core/ modules/
+```
+
+# ============================================================================
+# END OF CURSOR RULES
+# ============================================================================
