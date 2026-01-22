@@ -62,17 +62,22 @@ def create_engine() -> EngineService:
     Returns:
         EngineService: Instance đã được cấu hình
     """
-    # Cấu hình engine
+    # Lấy đường dẫn tuyệt đối dựa vào vị trí script
+    script_dir = Path(__file__).parent  # mediapipe_be/
+    project_root = script_dir.parent    # mediapipe/
+    
+    # Cấu hình engine với đường dẫn tuyệt đối
     config = EngineConfig(
         # Đường dẫn tới thư mục chứa model files
-        models_dir="../models",
+        # Có thể dùng models trong mediapipe_be/ hoặc trong mediapipe/
+        models_dir=str(script_dir / "models"),  # mediapipe_be/models/
         
         # Đường dẫn lưu logs
-        log_dir="../data/logs",
+        log_dir=str(project_root / "data" / "logs"),  # mediapipe/data/logs/
         
         # Video mẫu để sync (Phase 3)
         # Nếu không có, sẽ skip Phase 3 và chuyển thẳng sang Phase 4
-        ref_video_path="../videos/arm_raise.mp4",
+        ref_video_path=str(project_root / "videos" / "arm_raise.mp4"),
         
         # Khớp mặc định để tracking
         # Có thể là: left_shoulder, right_shoulder, left_elbow, 
@@ -85,6 +90,19 @@ def create_engine() -> EngineService:
         # Thời gian đo mỗi khớp (ms) - Phase 2
         calibration_duration_ms=5000,
     )
+    
+    # Debug: In ra đường dẫn đang sử dụng
+    print(f"   📁 Models dir: {config.models_dir}")
+    print(f"   📁 Log dir: {config.log_dir}")
+    print(f"   📁 Video path: {config.ref_video_path}")
+    
+    # Kiểm tra models tồn tại
+    models_path = Path(config.models_dir)
+    pose_model = models_path / "pose_landmarker_lite.task"
+    if pose_model.exists():
+        print(f"   ✅ Pose model found: {pose_model}")
+    else:
+        print(f"   ❌ Pose model NOT found: {pose_model}")
     
     # Tạo engine instance
     engine = EngineService(config)
