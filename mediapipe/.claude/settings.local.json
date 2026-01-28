@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir /s /b \"D:\\\\IEC_MEMOTION\\\\mediapipe\")",
+      "Bash(findstr:*)"
+    ]
+  }
+}

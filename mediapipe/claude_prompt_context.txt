@@ -1,0 +1,13 @@
+"Hãy sử dụng các công cụ của bạn để quét toàn bộ cấu trúc thư mục và đọc các file quan trọng (như requirements.txt, các file config, và các folder và các file mã nguồn chính). Sau đó, hãy tạo một file PROJECT_CONTEXT.md mô tả chi tiết:
+
+
+
+Tổng quan dự án: Mục đích và công nghệ sử dụng (Tech Stack).
+
+Cấu trúc thư mục: Giải thích ý nghĩa của các thư mục chính.
+
+Luồng hoạt động chính: Cách các thành phần kết nối với nhau.
+
+Hướng dẫn cài đặt & Chạy: Tóm tắt nhanh các lệnh quan trọng.
+
+File này sẽ được dùng làm ngữ cảnh cho các phiên làm việc tiếp theo của tôi với bạn."

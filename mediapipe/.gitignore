@@ -3,7 +3,7 @@
 *.csv
 results.csv
 output.mp4
-
+nul
 # Python cache
 __pycache__/
 *.pyc
