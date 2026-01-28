@@ -1,0 +1,57 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'secondaryColor': '#f0f0f0', 'tertiaryColor': '#ffffff', 'background': '#ffffff', 'mainBkg': '#ffffff', 'nodeBorder': '#000000', 'clusterBkg': '#f5f5f5', 'clusterBorder': '#000000', 'titleColor': '#000000', 'edgeLabelBackground': '#ffffff'}}}%%
+
+graph TB
+    subgraph MEMOTION["MEMOTION V2.0 - ARCHITECTURE"]
+        subgraph STATE["AppState (Dataclass)"]
+            S1["current_phase: AppPhase"]
+            S2["is_running, is_paused"]
+            S3["Phase 1-4 specific states"]
+            S4["user_angle, target_angle, scores"]
+        end
+        
+        subgraph APP["MemotionAppV2 (Main Class)"]
+            subgraph COMPONENTS["Components"]
+                C1["VisionDetector"]
+                C2["VideoEngine"]
+                C3["MotionSyncController"]
+                C4["SafeMaxCalibrator"]
+                C5["PainDetector"]
+                C6["HealthScorer"]
+                C7["SessionLogger"]
+            end
+            
+            subgraph METHODS["Core Methods"]
+                M1["run()"]
+                M2["_run_phase1()"]
+                M3["_run_phase2()"]
+                M4["_run_phase3()"]
+                M5["_run_phase4()"]
+                M6["_handle_key()"]
+                M7["_transition_to_phaseX()"]
+            end
+        end
+        
+        subgraph INPUT["Input Sources"]
+            I1["Webcam"]
+            I2["Video File"]
+            I3["Reference Video"]
+        end
+        
+        subgraph OUTPUT["Output"]
+            O1["Display Window"]
+            O2["Session Logs"]
+            O3["User Profiles"]
+            O4["Reports"]
+        end
+    end
+    
+    STATE --> APP
+    INPUT --> APP
+    APP --> OUTPUT
+    
+    C1 --> M2
+    C1 --> M3
+    C4 --> M3
+    C3 --> M4
+    C6 --> M5
+    C2 --> M4

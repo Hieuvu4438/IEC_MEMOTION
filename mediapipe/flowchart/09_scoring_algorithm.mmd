@@ -1,0 +1,44 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'secondaryColor': '#f0f0f0', 'tertiaryColor': '#ffffff', 'background': '#ffffff', 'mainBkg': '#ffffff', 'nodeBorder': '#000000', 'clusterBkg': '#f5f5f5', 'clusterBorder': '#000000', 'titleColor': '#000000', 'edgeLabelBackground': '#ffffff'}}}%%
+
+flowchart TB
+    subgraph SCORING["SCORING ALGORITHM"]
+        subgraph SINGLE["Single Joint Score"]
+            INPUT["user_angle, target_angle"] --> CALC_ERROR["error = abs(user - target)"]
+            CALC_ERROR --> ERROR_PCT["error_percent = error / target * 100"]
+            
+            ERROR_PCT --> CHECK1{"error < 5%?"}
+            CHECK1 -->|Yes| SCORE100["score = 100"]
+            
+            CHECK1 -->|No| CHECK2{"error < 10%?"}
+            CHECK2 -->|Yes| SCORE95["score = 95-90"]
+            
+            CHECK2 -->|No| CHECK3{"error < 15%?"}
+            CHECK3 -->|Yes| SCORE90["score = 90-80"]
+            
+            CHECK3 -->|No| CHECK4{"error < 25%?"}
+            CHECK4 -->|Yes| SCORE80["score = 80-65"]
+            
+            CHECK4 -->|No| CHECK5{"error < 40%?"}
+            CHECK5 -->|Yes| SCORE65["score = 65-50"]
+            
+            CHECK5 -->|No| SCORE50["score = max(0, 50 - ...)"]
+        end
+        
+        subgraph MULTI["Multi-Joint Weighted Score"]
+            JOINTS["active_joints list"] --> LOOP["For each joint"]
+            LOOP --> GET_SCORE["joint_score = single_joint_score"]
+            GET_SCORE --> GET_WEIGHT["weight = joint_weights[joint]"]
+            GET_WEIGHT --> ACCUMULATE["total += score * weight"]
+            ACCUMULATE --> LOOP
+            
+            LOOP --> DIVIDE["weighted_score = total / sum(weights)"]
+        end
+        
+        subgraph SMOOTH["Score Smoothing"]
+            RAW["raw_score"] --> FORMULA["current = 0.7 * old + 0.3 * raw"]
+            FORMULA --> FINAL["smoothed_score"]
+        end
+        
+        SINGLE --> MULTI
+        MULTI --> SMOOTH
+    end

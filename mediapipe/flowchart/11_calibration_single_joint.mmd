@@ -1,0 +1,36 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'secondaryColor': '#f0f0f0', 'tertiaryColor': '#ffffff', 'background': '#ffffff', 'mainBkg': '#ffffff', 'nodeBorder': '#000000', 'clusterBkg': '#f5f5f5', 'clusterBorder': '#000000', 'titleColor': '#000000', 'edgeLabelBackground': '#ffffff'}}}%%
+
+flowchart TB
+    subgraph SINGLE_JOINT["CALIBRATION - MOT KHOP"]
+        START["Khop N tu queue"] --> SHOW_NAME["Hien thi ten khop"]
+        SHOW_NAME --> SHOW_INSTR["Hien thi huong dan tu the"]
+        
+        subgraph COUNTDOWN["COUNTDOWN 5 GIAY"]
+            CD1["5"] --> CD2["4"]
+            CD2 --> CD3["3"]
+            CD3 --> CD4["2"]
+            CD4 --> CD5["1"]
+        end
+        
+        SHOW_INSTR --> COUNTDOWN
+        
+        COUNTDOWN --> START_CALIB["_start_calibration_for_joint()"]
+        START_CALIB --> STATE_COLLECTING["CalibrationState.COLLECTING"]
+        
+        STATE_COLLECTING --> COLLECT["Thu thap goc 5 giay"]
+        
+        subgraph COLLECTING["QUA TRINH THU THAP"]
+            COL1["Doc frame"] --> COL2["Tinh goc khop"]
+            COL2 --> COL3["calibrator.update(angle)"]
+            COL3 --> COL4["Median filter"]
+            COL4 --> COL5["Cap nhat progress"]
+            COL5 --> COL1
+        end
+        
+        COLLECT --> COLLECTING
+        
+        COLLECTING --> STATE_COMPLETE["CalibrationState.COMPLETED"]
+        STATE_COMPLETE --> SAVE["Luu max_angle vao calibrated_joints"]
+        SAVE --> FINISH["_finish_calibration_for_joint()"]
+        FINISH --> NEXT["Chuyen sang khop tiep theo"]
+    end

@@ -1,0 +1,35 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'secondaryColor': '#f0f0f0', 'tertiaryColor': '#ffffff', 'background': '#ffffff', 'mainBkg': '#ffffff', 'nodeBorder': '#000000', 'clusterBkg': '#f5f5f5', 'clusterBorder': '#000000', 'titleColor': '#000000', 'edgeLabelBackground': '#ffffff'}}}%%
+
+flowchart TB
+    subgraph PHASE1["PHASE 1: POSE DETECTION"]
+        START["Start Phase 1"] --> DISPLAY["Hien thi huong dan"]
+        DISPLAY --> READ["Doc frame tu camera"]
+        READ --> DETECT{"result.has_pose()"}
+        
+        DETECT -->|No| RESET["Reset stable_count = 0"]
+        RESET --> READ
+        
+        DETECT -->|Yes| DRAW["Ve skeleton"]
+        DRAW --> COUNT["stable_count += 1"]
+        COUNT --> CHECK{"stable_count >= 30?"}
+        
+        CHECK -->|No| READ
+        CHECK -->|Yes| DETECTED["pose_detected = True"]
+        
+        DETECTED --> COUNTDOWN_START["Bat dau countdown 3 giay"]
+        COUNTDOWN_START --> COUNTDOWN_DISPLAY["Hien thi so dem nguoc"]
+        COUNTDOWN_DISPLAY --> COUNTDOWN_CHECK{"Countdown het?"}
+        
+        COUNTDOWN_CHECK -->|No| POSE_CHECK{"Van co pose?"}
+        POSE_CHECK -->|Yes| COUNTDOWN_DISPLAY
+        POSE_CHECK -->|No| RESET
+        
+        COUNTDOWN_CHECK -->|Yes| TRANSITION["_transition_to_phase2()"]
+        TRANSITION --> END_PHASE1["Chuyen sang Phase 2"]
+    end
+    
+    subgraph UI["UI Elements"]
+        U1["Progress bar: stable_count/30"]
+        U2["Countdown lon: 3...2...1"]
+        U3["Text: Dung yen, chuan bi..."]
+    end

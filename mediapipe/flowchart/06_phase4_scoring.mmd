@@ -1,0 +1,34 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'secondaryColor': '#f0f0f0', 'tertiaryColor': '#ffffff', 'background': '#ffffff', 'mainBkg': '#ffffff', 'nodeBorder': '#000000', 'clusterBkg': '#f5f5f5', 'clusterBorder': '#000000', 'titleColor': '#000000', 'edgeLabelBackground': '#ffffff'}}}%%
+
+flowchart TB
+    subgraph PHASE4["PHASE 4: SCORING AND RESULTS"]
+        START["Start Phase 4"] --> CALC["Tinh toan ket qua cuoi"]
+        
+        CALC --> TOTAL["Tong so hiep: rep_count"]
+        CALC --> AVG["Diem trung binh: average_score"]
+        CALC --> GRADE{"Xac dinh grade"}
+        
+        GRADE -->|score >= 80| EXCELLENT["XUAT SAC"]
+        GRADE -->|score >= 60| GOOD["KHA"]
+        GRADE -->|score < 60| IMPROVE["CAN CO GANG"]
+        
+        subgraph DETAILS["Chi tiet diem"]
+            D1["ROM - Bien do: 30%"]
+            D2["Stability - On dinh: 20%"]
+            D3["Flow - Mu mut: 20%"]
+            D4["Symmetry - Doi xung: 15%"]
+            D5["Compensation: 15%"]
+        end
+        
+        EXCELLENT --> DISPLAY
+        GOOD --> DISPLAY
+        IMPROVE --> DISPLAY
+        
+        DISPLAY["Hien thi ket qua"] --> RECOMMEND["Hien thi khuyen nghi"]
+        RECOMMEND --> SAVE_LOG["Luu vao session log"]
+        SAVE_LOG --> SAVE_REPORT["Luu bao cao"]
+        
+        SAVE_REPORT --> WAIT_KEY{"Cho phim?"}
+        WAIT_KEY -->|R| RESTART["_restart() - Quay lai Phase 1"]
+        WAIT_KEY -->|Q| EXIT["Thoat ung dung"]
+    end
