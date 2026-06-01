@@ -261,7 +261,10 @@ def draw_skeleton(
         if not (0 <= x1 < w and 0 <= y1 < h and 0 <= x2 < w and 0 <= y2 < h):
             continue
         
-        cv2.line(output, (x1, y1), (x2, y2), color, line_thickness)
+        # Shadow effect for lines
+        cv2.line(output, (x1, y1), (x2, y2), (0, 0, 0), line_thickness + 3, cv2.LINE_AA)
+        # Main line
+        cv2.line(output, (x1, y1), (x2, y2), color, line_thickness, cv2.LINE_AA)
     
     # Vẽ keypoints
     for idx, point in enumerate(landmarks):
@@ -281,8 +284,13 @@ def draw_skeleton(
             pt_color = highlight_color
             pt_radius = keypoint_radius + 4
         
-        cv2.circle(output, (x, y), pt_radius, pt_color, -1)
-        cv2.circle(output, (x, y), pt_radius + 2, color, 1)
+        # Shadow/glow effect for points
+        cv2.circle(output, (x, y), pt_radius + 2, (0, 0, 0), -1, cv2.LINE_AA)
+        # Main point
+        cv2.circle(output, (x, y), pt_radius, pt_color, -1, cv2.LINE_AA)
+        # Inner white dot for a modern look
+        inner_radius = max(1, pt_radius - 2)
+        cv2.circle(output, (x, y), inner_radius, (255, 255, 255), -1, cv2.LINE_AA)
     
     return output
 
@@ -348,44 +356,38 @@ def draw_panel(
     position: Tuple[int, int],
     size: Tuple[int, int],
     title: str = "",
-    bg_color: Tuple[int, int, int] = COLORS['panel_bg'],
+    bg_color: Tuple[int, int, int] = (20, 20, 20),
     title_color: Tuple[int, int, int] = COLORS['text'],
-    alpha: float = 0.7
+    alpha: float = 0.65
 ) -> np.ndarray:
     """
-    Vẽ panel nền mờ với tiêu đề.
-    
-    Args:
-        frame: OpenCV frame.
-        position: Vị trí góc trên trái (x, y).
-        size: Kích thước (width, height).
-        title: Tiêu đề panel.
-        bg_color: Màu nền.
-        title_color: Màu tiêu đề.
-        alpha: Độ trong suốt (0-1).
-        
-    Returns:
-        Frame với panel.
+    Vẽ HUD panel hiện đại với góc bo tròn và gradient mờ.
     """
     output = frame.copy()
     x, y = position
     w, h = size
+    r = 10
     
-    # Vẽ nền mờ
     overlay = output.copy()
-    cv2.rectangle(overlay, (x, y), (x + w, y + h), bg_color, -1)
+    # Vẽ rounded rect
+    cv2.circle(overlay, (x+r, y+r), r, bg_color, -1, cv2.LINE_AA)
+    cv2.circle(overlay, (x+w-r, y+r), r, bg_color, -1, cv2.LINE_AA)
+    cv2.circle(overlay, (x+r, y+h-r), r, bg_color, -1, cv2.LINE_AA)
+    cv2.circle(overlay, (x+w-r, y+h-r), r, bg_color, -1, cv2.LINE_AA)
+    cv2.rectangle(overlay, (x+r, y), (x+w-r, y+h), bg_color, -1)
+    cv2.rectangle(overlay, (x, y+r), (x+w, y+h-r), bg_color, -1)
+    
+    # Alpha blend
     cv2.addWeighted(overlay, alpha, output, 1 - alpha, 0, output)
     
-    # Vẽ viền
-    cv2.rectangle(output, (x, y), (x + w, y + h), (100, 100, 100), 1)
+    # Accent decoration line bên trái
+    cv2.line(output, (x+r-2, y+15), (x+r-2, y+h-15), COLORS['info'], 3, cv2.LINE_AA)
     
-    # Vẽ tiêu đề
     if title:
         output = put_vietnamese_text(
-            output, title, (x + 10, y + 25),
-            title_color, font_size=18
+            output, title, (x + r + 10, y + 25),
+            title_color, font_size=16
         )
-    
     return output
 
 
@@ -395,51 +397,41 @@ def draw_progress_bar(
     size: Tuple[int, int],
     progress: float,
     color: Tuple[int, int, int] = COLORS['success'],
-    bg_color: Tuple[int, int, int] = (100, 100, 100),
+    bg_color: Tuple[int, int, int] = (60, 60, 60),
     show_percentage: bool = True
 ) -> np.ndarray:
     """
-    Vẽ thanh progress.
-    
-    Args:
-        frame: OpenCV frame.
-        position: Vị trí (x, y).
-        size: Kích thước (width, height).
-        progress: Tiến độ 0-1.
-        color: Màu thanh progress.
-        bg_color: Màu nền.
-        show_percentage: Hiển thị phần trăm.
-        
-    Returns:
-        Frame với progress bar.
+    Vẽ thanh progress hiện đại bo tròn.
     """
     output = frame.copy()
     x, y = position
     w, h = size
+    r = h // 2
     
-    progress = max(0, min(1, progress))
+    progress = max(0.0, min(1.0, progress))
     
-    # Vẽ nền
-    cv2.rectangle(output, (x, y), (x + w, y + h), bg_color, -1)
+    # Vẽ bg rounded
+    cv2.circle(output, (x+r, y+r), r, bg_color, -1, cv2.LINE_AA)
+    cv2.circle(output, (x+w-r, y+r), r, bg_color, -1, cv2.LINE_AA)
+    cv2.rectangle(output, (x+r, y), (x+w-r, y+h), bg_color, -1)
     
     # Vẽ progress
-    progress_w = int(w * progress)
-    if progress_w > 0:
-        cv2.rectangle(output, (x, y), (x + progress_w, y + h), color, -1)
+    pw = int(w * progress)
+    if pw >= h:
+        cv2.circle(output, (x+r, y+r), r, color, -1, cv2.LINE_AA)
+        cv2.circle(output, (x+pw-r, y+r), r, color, -1, cv2.LINE_AA)
+        cv2.rectangle(output, (x+r, y), (x+pw-r, y+h), color, -1)
+    elif pw > 0:
+        cv2.circle(output, (x+r, y+r), r, color, -1, cv2.LINE_AA)
     
-    # Vẽ viền
-    cv2.rectangle(output, (x, y), (x + w, y + h), (150, 150, 150), 1)
-    
-    # Hiển thị phần trăm
     if show_percentage:
         text = f"{int(progress * 100)}%"
-        text_x = x + w // 2 - 15
-        text_y = y + h // 2 + 5
+        text_w = 30
         cv2.putText(
-            output, text, (text_x, text_y),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.4, COLORS['text'], 1
+            output, text, (x + w + 10, y + h - 2),
+            cv2.FONT_HERSHEY_SIMPLEX, min(0.4, h/40), COLORS['text'], 1, cv2.LINE_AA
         )
-    
+        
     return output
 
 

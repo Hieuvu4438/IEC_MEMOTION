@@ -9,8 +9,14 @@ Tích hợp hoàn chỉnh 4 giai đoạn với UI rõ ràng:
 4. PHASE 4: Scoring & Analysis - Chấm điểm và phân tích
 
 Usage:
-    python main_v2.py --source webcam --ref-video exercise.mp4
+    python main_v2.py --ref-video exercise.mp4
+    python main_v2.py --user-video user.mp4 --ref-video exercise.mp4
     python main_v2.py --mode test
+    python main_v2.py --phase 1                                    # Test Phase 1 (webcam)
+    python main_v2.py --phase 1 --user-video user.mp4             # Test Phase 1 (video)
+    python main_v2.py --phase 2 --user-video user.mp4             # Test Phase 2 (video)
+    python main_v2.py --phase 3 --user-video user.mp4 --ref-video ref.mp4  # Test Phase 3
+    python main_v2.py --phase 4                                    # Test Phase 4
 
 Controls:
     SPACE: Pause/Resume hoặc Bắt đầu calibration
@@ -438,36 +444,10 @@ class MemotionAppV2:
     def _run_phase1(self, frame: np.ndarray, result) -> np.ndarray:
         """Phase 1: Nhận diện Pose và vẽ skeleton (Tự động chuyển Phase 2)."""
         output = frame.copy()
-        h, w = frame.shape[:2]
         current_time = time.time()
         
-        # Panel hướng dẫn
-        output = draw_panel(output, (10, 10), (450, 250), "")
-        
-        # Tiêu đề phase
-        output = put_vietnamese_text(
-            output, "GIAI DOAN 1: NHAN DIEN TU THE",
-            (25, 40), COLORS['info'], 18
-        )
-        
-        # Hướng dẫn
-        instructions = [
-            "Hay dung truoc camera de he thong nhan dien",
-            "Dam bao toan than nam trong khung hinh",
-            "Dung yen cho den khi thay skeleton xuat hien",
-            "He thong se tu dong chuyen sang Phase 2",
-        ]
-        
-        y_pos = 75
-        for inst in instructions:
-            output = put_vietnamese_text(output, f"  {inst}", (25, y_pos), COLORS['text'], 13)
-            y_pos += 25
-        
-        # Kiểm tra pose detected
         if result.has_pose():
             self._current_landmarks = result.pose_landmarks.to_numpy()
-            
-            # Vẽ skeleton
             highlight = []
             if self._state.selected_joint:
                 joint_def = JOINT_DEFINITIONS.get(self._state.selected_joint)
@@ -482,65 +462,22 @@ class MemotionAppV2:
                 use_core_only=True
             )
             
-            # Đếm stable frames
             self._state.detection_stable_count += 1
-            progress = min(1.0, self._state.detection_stable_count / self.DETECTION_STABLE_THRESHOLD)
-            
             if self._state.detection_stable_count >= self.DETECTION_STABLE_THRESHOLD:
                 self._state.pose_detected = True
-                
-                # === AUTO TRANSITION: Bắt đầu countdown 3 giây ===
                 if not self._state.phase1_countdown_active:
                     self._state.phase1_countdown_active = True
                     self._state.phase1_countdown_start = current_time
-                    print("[PHASE 1] Da nhan dien thanh cong! Bat dau dem nguoc 3 giay...")
                 
-                # Tính thời gian countdown còn lại
                 elapsed = current_time - self._state.phase1_countdown_start
                 remaining = self.PHASE1_COUNTDOWN_DURATION - elapsed
                 
-                if remaining > 0:
-                    # Hiển thị countdown
-                    status_text = f"CHUAN BI... {int(remaining) + 1} giay"
-                    status_color = COLORS['success']
-                    
-                    # Vẽ countdown lớn ở giữa màn hình
-                    countdown_num = str(int(remaining) + 1)
-                    cv2.putText(output, countdown_num, (w // 2 - 30, h // 2),
-                               cv2.FONT_HERSHEY_SIMPLEX, 3, (0, 255, 0), 5)
-                    
-                    output = put_vietnamese_text(
-                        output, "Dung yen, chuan bi do gioi han van dong...",
-                        (w // 2 - 180, h // 2 + 50), COLORS['info'], 14
-                    )
-                else:
-                    # Countdown kết thúc - TỰ ĐỘNG chuyển Phase 2
-                    status_text = "CHUYEN SANG PHASE 2..."
-                    status_color = COLORS['success']
+                if remaining <= 0:
                     self._transition_to_phase2()
-            else:
-                status_text = f"Dang xac nhan... {int(progress * 100)}%"
-                status_color = COLORS['warning']
-            
-            output = put_vietnamese_text(output, status_text, (25, y_pos + 10), status_color, 16)
-            output = draw_progress_bar(output, (25, y_pos + 35), (400, 18), progress, status_color)
         else:
-            # Reset countdown nếu mất pose
             self._state.detection_stable_count = 0
             self._state.phase1_countdown_active = False
-            output = put_vietnamese_text(
-                output, "Chua phat hien nguoi. Hay dung vao khung hinh.",
-                (25, y_pos + 10), COLORS['error'], 16
-            )
-        
-        # Hiển thị thông tin phase hiện tại
-        phase_text = "Phase: 1/4 - Nhan dien tu the"
-        output = put_vietnamese_text(output, phase_text, (w - 280, 30), COLORS['info'], 14)
-        
-        # Controls (auto transition, no ENTER needed)
-        controls = "[Q] Thoat | Tu dong chuyen Phase 2"
-        output = put_vietnamese_text(output, controls, (w - 300, h - 25), (150, 150, 150), 12)
-        
+            
         return output
     
     # ================== PHASE 2: CALIBRATION (AUTOMATED) ==================
@@ -551,181 +488,14 @@ class MemotionAppV2:
         h, w = frame.shape[:2]
         current_time = time.time()
         
-        # Lấy khớp hiện tại từ queue
         if self._state.calibration_queue_index < len(CALIBRATION_QUEUE):
             current_joint = CALIBRATION_QUEUE[self._state.calibration_queue_index]
             self._state.selected_joint = current_joint
         else:
-            # Đã đo xong tất cả khớp
             self._state.all_joints_calibrated = True
-        
-        # Panel chính
-        output = draw_panel(output, (10, 10), (500, 380), "")
-        
-        # Tiêu đề
-        output = put_vietnamese_text(
-            output, "GIAI DOAN 2: DO GIOI HAN VAN DONG (TU DONG)",
-            (25, 40), COLORS['info'], 18
-        )
-        
-        # Hiển thị tiến trình tổng thể
-        y_pos = 75
-        total_joints = len(CALIBRATION_QUEUE)
-        completed_joints = len(self._state.calibrated_joints)
-        output = put_vietnamese_text(
-            output, f"Tien do: {completed_joints}/{total_joints} khop",
-            (25, y_pos), COLORS['text'], 14
-        )
-        y_pos += 25
-        
-        # Progress bar tổng thể
-        overall_progress = completed_joints / total_joints
-        output = draw_progress_bar(output, (25, y_pos), (450, 12), overall_progress, COLORS['info'])
-        y_pos += 25
-        
-        # Hiển thị danh sách khớp và trạng thái
-        output = put_vietnamese_text(output, "Danh sach khop:", (25, y_pos), (150, 150, 150), 12)
-        y_pos += 22
-        
-        for i, joint_type in enumerate(CALIBRATION_QUEUE):
-            joint_name = JOINT_NAMES.get(joint_type, joint_type.value)
-            
-            if joint_type in self._state.calibrated_joints:
-                # Đã đo xong
-                angle = self._state.calibrated_joints[joint_type]
-                status = f"[OK] {joint_name}: {angle:.1f} do"
-                color = COLORS['success']
-            elif i == self._state.calibration_queue_index:
-                # Đang đo
-                status = f">>> {joint_name} (dang do)"
-                color = COLORS['warning']
-            else:
-                # Chưa đo
-                status = f"    {joint_name}"
-                color = (120, 120, 120)
-            
-            output = put_vietnamese_text(output, status, (30, y_pos), color, 12)
-            y_pos += 20
-        
-        y_pos += 15
-        
-        # === LOGIC TỰ ĐỘNG ===
-        if self._state.all_joints_calibrated:
-            # Đã đo xong tất cả - hiển thị kết quả và tự động chuyển phase
-            output = put_vietnamese_text(
-                output, "DA DO XONG TAT CA 6 KHOP!",
-                (25, y_pos), COLORS['success'], 18
-            )
-            y_pos += 30
-            output = put_vietnamese_text(
-                output, "Dang luu ket qua va chuyen sang Phase 3...",
-                (25, y_pos), COLORS['info'], 14
-            )
-            
-            # Tự động chuyển sang Phase 3 sau 2 giây
-            if not hasattr(self, '_phase2_complete_time'):
-                self._phase2_complete_time = current_time
-                self._save_calibration_to_profile()
-            elif current_time - self._phase2_complete_time > 2.0:
-                self._state.calibration_complete = True
-                self._transition_to_phase3()
-                delattr(self, '_phase2_complete_time')
-        
-        elif not self._state.is_countdown_active and not self._state.is_calibrating_joint:
-            # Bắt đầu countdown cho khớp mới
-            self._state.is_countdown_active = True
-            self._state.calibration_countdown_start = current_time
-            print(f"[CALIBRATION] Chuan bi do: {JOINT_NAMES.get(current_joint)}")
-        
-        elif self._state.is_countdown_active:
-            # Đang countdown chuẩn bị
-            elapsed = current_time - self._state.calibration_countdown_start
-            remaining = CALIBRATION_COUNTDOWN_DURATION - elapsed
-            
-            if remaining > 0:
-                # Hiển thị countdown và hướng dẫn tư thế
-                position_instruction = JOINT_POSITION_INSTRUCTIONS.get(current_joint, "")
-                joint_name = JOINT_NAMES.get(current_joint, "")
-                
-                # Hướng dẫn tư thế với font lớn
-                output = put_vietnamese_text(
-                    output, position_instruction,
-                    (25, y_pos), COLORS['warning'], 20
-                )
-                y_pos += 35
-                
-                # Countdown số lớn
-                countdown_text = f"Bat dau sau: {int(remaining) + 1} giay"
-                output = put_vietnamese_text(
-                    output, countdown_text,
-                    (25, y_pos), COLORS['info'], 18
-                )
-                y_pos += 30
-                
-                # Hướng dẫn chi tiết
-                output = put_vietnamese_text(
-                    output, f"Khop: {joint_name}",
-                    (25, y_pos), COLORS['text'], 14
-                )
-                y_pos += 22
-                output = put_vietnamese_text(
-                    output, "Thuc hien dong tac HET KHA NANG (khong dau)",
-                    (25, y_pos), COLORS['warning'], 12
-                )
-                
-                # Progress bar countdown
-                countdown_progress = elapsed / CALIBRATION_COUNTDOWN_DURATION
-                output = draw_progress_bar(
-                    output, (25, y_pos + 25), (450, 15),
-                    countdown_progress, COLORS['warning']
-                )
-            else:
-                # Countdown kết thúc - bắt đầu đo
-                self._state.is_countdown_active = False
-                self._state.is_calibrating_joint = True
-                self._start_calibration_for_joint(current_joint)
-        
-        elif self._state.is_calibrating_joint:
-            # Đang đo khớp
-            joint_name = JOINT_NAMES.get(current_joint, "")
-            
-            if self._calibrator.state == CalibrationState.COLLECTING:
-                progress = self._calibrator.progress
-                output = put_vietnamese_text(
-                    output, f"Dang do {joint_name}... {int(progress * 100)}%",
-                    (25, y_pos), COLORS['warning'], 16
-                )
-                y_pos += 28
-                output = draw_progress_bar(output, (25, y_pos), (450, 18), progress, COLORS['warning'])
-                y_pos += 30
-                
-                # Thêm frame vào calibrator
-                if result.has_pose() and current_joint:
-                    try:
-                        landmarks = result.pose_landmarks.to_numpy()
-                        angle = calculate_joint_angle(landmarks, current_joint, use_3d=True)
-                        self._state.user_angle = angle
-                        self._calibrator.add_frame(result.pose_landmarks, timestamp_ms)
-                        
-                        output = put_vietnamese_text(
-                            output, f"Goc hien tai: {angle:.1f} do",
-                            (25, y_pos), COLORS['info'], 18
-                        )
-                    except ValueError:
-                        pass
-                    
-                    # Kiểm tra hoàn thành
-                    if self._calibrator.state == CalibrationState.COMPLETED:
-                        self._finish_calibration_for_joint(current_joint)
-            
-            elif self._calibrator.state == CalibrationState.COMPLETED:
-                # Đã đo xong khớp này - sẽ được xử lý ở frame tiếp theo
-                pass
-        
-        # Vẽ skeleton với highlight
+
         if result.has_pose():
             landmarks = result.pose_landmarks.to_numpy()
-            
             highlight = []
             if self._state.selected_joint:
                 joint_def = JOINT_DEFINITIONS.get(self._state.selected_joint)
@@ -739,22 +509,86 @@ class MemotionAppV2:
                 use_core_only=True
             )
             
-            # Vẽ góc
+            # Vẽ góc nếu đang đo
             if self._state.selected_joint and self._state.user_angle > 0:
                 p1, pv, p2 = self._get_joint_pixel_coords(
                     landmarks, self._state.selected_joint, (h, w)
                 )
                 if p1 and pv and p2:
                     output = draw_angle_arc(output, p1, pv, p2, self._state.user_angle)
+
+        # HUD Progress tổng thể
+        total_joints = len(CALIBRATION_QUEUE)
+        completed_joints = len(self._state.calibrated_joints)
         
-        # Phase indicator
-        phase_text = f"Phase: 2/4 - Calibration ({completed_joints}/{total_joints})"
-        output = put_vietnamese_text(output, phase_text, (w - 300, 30), COLORS['info'], 14)
+        output = draw_panel(output, (20, 20), (280, 100), "GIOI HAN VAN DONG")
+        output = put_vietnamese_text(
+            output, f"Tien do: {completed_joints}/{total_joints} khop",
+            (35, 65), COLORS['text'], 14
+        )
+        output = draw_progress_bar(output, (35, 85), (220, 10), completed_joints / max(1, total_joints), COLORS['info'])
+
+        if self._state.all_joints_calibrated:
+            output = draw_panel(output, (w//2 - 200, h - 160), (400, 100), "HOAN THANH!")
+            output = put_vietnamese_text(
+                output, "Da do xong 6 khop. Chuyen sang Phase 3...",
+                (w//2 - 185, h - 100), COLORS['success'], 16
+            )
+            if not hasattr(self, '_phase2_complete_time'):
+                self._phase2_complete_time = current_time
+                self._save_calibration_to_profile()
+            elif current_time - self._phase2_complete_time > 2.0:
+                self._state.calibration_complete = True
+                self._transition_to_phase3()
+                delattr(self, '_phase2_complete_time')
         
-        # Controls
-        controls = "[Q] Thoat | [R] Bat dau lai"
-        output = put_vietnamese_text(output, controls, (20, h - 25), (150, 150, 150), 12)
+        elif not self._state.is_countdown_active and not self._state.is_calibrating_joint:
+            self._state.is_countdown_active = True
+            self._state.calibration_countdown_start = current_time
         
+        elif self._state.is_countdown_active:
+            elapsed = current_time - self._state.calibration_countdown_start
+            remaining = CALIBRATION_COUNTDOWN_DURATION - elapsed
+            
+            # HUD Countdown
+            joint_name = JOINT_NAMES.get(current_joint, "")
+            output = draw_panel(output, (w//2 - 200, h - 180), (400, 140), f"KHOP: {joint_name}")
+            output = put_vietnamese_text(
+                output, "Thuc hien dong tac HET KHA NANG (khong dau)",
+                (w//2 - 185, h - 120), COLORS['warning'], 14
+            )
+            output = put_vietnamese_text(
+                output, f"Bat dau sau: {int(remaining) + 1} s",
+                (w//2 - 185, h - 80), COLORS['info'], 20
+            )
+            
+            if remaining <= 0:
+                self._state.is_countdown_active = False
+                self._state.is_calibrating_joint = True
+                self._start_calibration_for_joint(current_joint)
+        
+        elif self._state.is_calibrating_joint:
+            if self._calibrator.state == CalibrationState.COLLECTING:
+                joint_name = JOINT_NAMES.get(current_joint, "")
+                output = draw_panel(output, (w//2 - 200, h - 160), (400, 120), f"DANG DO: {joint_name}")
+                
+                progress = self._calibrator.progress
+                output = put_vietnamese_text(
+                    output, f"Goc hien tai: {self._state.user_angle:.1f} do",
+                    (w//2 - 185, h - 110), COLORS['info'], 18
+                )
+                output = draw_progress_bar(output, (w//2 - 185, h - 70), (350, 12), progress, COLORS['warning'])
+                
+                if result.has_pose() and current_joint:
+                    try:
+                        landmarks = result.pose_landmarks.to_numpy()
+                        angle = calculate_joint_angle(landmarks, current_joint, use_3d=True)
+                        self._state.user_angle = angle
+                        self._calibrator.add_frame(result.pose_landmarks, timestamp_ms)
+                    except ValueError:
+                        pass
+                    if self._calibrator.state == CalibrationState.COMPLETED:
+                        self._finish_calibration_for_joint(current_joint)
         return output
     
     def _start_calibration_for_joint(self, joint_type: JointType) -> None:
@@ -865,7 +699,6 @@ class MemotionAppV2:
         
         # Vẽ skeleton user với highlight tất cả khớp hoạt động
         if result.has_pose():
-            # Highlight tất cả các khớp đang hoạt động
             highlight = []
             for joint_type in self._state.active_joints:
                 joint_def = JOINT_DEFINITIONS.get(joint_type)
@@ -875,68 +708,10 @@ class MemotionAppV2:
             user_display = draw_skeleton(
                 user_display, self._current_landmarks,
                 color=COLORS['skeleton'],
-                highlight_indices=list(set(highlight)),  # Remove duplicates
+                highlight_indices=list(set(highlight)),
                 use_core_only=True
             )
             
-            # Vẽ góc cho primary joint
-            if self._state.user_angle > 0 and self._state.selected_joint:
-                p1, pv, p2 = self._get_joint_pixel_coords(
-                    self._current_landmarks, self._state.selected_joint, (h, w)
-                )
-                if p1 and pv and p2:
-                    user_display = draw_angle_arc(
-                        user_display, p1, pv, p2, self._state.user_angle,
-                        color=COLORS['info']
-                    )
-        
-        # Panel thông tin user (hiển thị primary joint)
-        user_display = draw_panel(user_display, (10, 10), (220, 140), "")
-        user_display = put_vietnamese_text(user_display, "NGUOI DUNG", (25, 35), COLORS['text'], 16)
-        user_display = put_vietnamese_text(
-            user_display, f"Goc: {self._state.user_angle:.1f}",
-            (25, 60), COLORS['text'], 14
-        )
-        user_display = put_vietnamese_text(
-            user_display, f"Muc tieu: {self._state.target_angle:.1f}",
-            (25, 82), COLORS['info'], 14
-        )
-        
-        # Sai số với feedback text
-        error = abs(self._state.user_angle - self._state.target_angle)
-        if error < 10:
-            error_color = COLORS['success']
-            feedback_text = "TUYET VOI!"
-        elif error < 20:
-            error_color = COLORS['success'] 
-            feedback_text = "TOT!"
-        elif error < 30:
-            error_color = COLORS['warning']
-            feedback_text = "KHA"
-        else:
-            error_color = COLORS['error']
-            feedback_text = "DIEU CHINH!"
-            
-        user_display = put_vietnamese_text(
-            user_display, f"Sai so: {error:.1f} - {feedback_text}",
-            (25, 104), error_color, 14
-        )
-        
-        # Điểm hiện tại (multi-joint weighted average)
-        score_color = COLORS['success'] if self._state.current_score >= 70 else COLORS['warning']
-        user_display = put_vietnamese_text(
-            user_display, f"Diem: {self._state.current_score:.0f}",
-            (25, 126), score_color, 14
-        )
-        
-        # Hiển thị trạng thái đạt mục tiêu - banner lớn nếu đạt
-        if error < 15 and self._state.target_angle > 0:
-            cv2.rectangle(user_display, (10, h - 50), (w // 2 - 10, h - 10), (0, 100, 0), -1)
-            user_display = put_vietnamese_text(
-                user_display, "DAT MUC TIEU!",
-                (w // 4 - 60, h - 25), COLORS['text'], 18
-            )
-        
         # === REFERENCE VIEW ===
         if ref_frame is not None:
             ref_display = ref_frame.copy()
@@ -955,53 +730,55 @@ class MemotionAppV2:
                         keypoint_color=COLORS['keypoint_ref'],
                         use_core_only=True
                     )
-            
-            # Panel thông tin reference
-            ref_display = draw_panel(ref_display, (10, 10), (180, 100), "")
-            ref_display = put_vietnamese_text(ref_display, "VIDEO MAU", (25, 35), COLORS['text'], 16)
-            
-            # Phase indicator
-            phase = self._state.motion_phase.lower()
-            phase_color = PHASE_COLORS.get(phase, (128, 128, 128))
-            phase_name = PHASE_NAMES_VI.get(phase, phase.upper())
-            
-            cv2.circle(ref_display, (35, 65), 12, phase_color, -1)
-            ref_display = put_vietnamese_text(
-                ref_display, phase_name.upper(),
-                (55, 70), phase_color, 14
-            )
-            
-            # Video progress
-            if self._video_engine:
-                progress = self._video_engine.current_frame / max(1, self._video_engine.total_frames)
-                ref_display = draw_progress_bar(
-                    ref_display, (10, ref_h - 25), (ref_w - 20, 12),
-                    progress, COLORS['info'], show_percentage=False
-                )
-            
-            # Waiting indicator
-            if self._state.sync_state and self._state.sync_state.sync_status == SyncStatus.PAUSE:
-                ref_display = put_vietnamese_text(
-                    ref_display, "|| CHO",
-                    (ref_w - 80, 35), COLORS['warning'], 16
-                )
         else:
             ref_display = np.zeros((h, w // 2, 3), dtype=np.uint8)
             ref_display[:] = (40, 40, 40)
-            ref_display = put_vietnamese_text(
-                ref_display, "KHONG CO VIDEO MAU",
-                (50, h // 2), COLORS['warning'], 16
-            )
         
-        # === DASHBOARD (MULTI-JOINT) ===
-        dashboard = self._create_phase3_dashboard(h)
+        # === VẼ UI OVERLAYS LÊN VIEW ===
+        # Hướng dẫn & Dữ liệu cho User View
+        user_display = draw_panel(user_display, (20, 20), (220, 130), "NGUOI DUNG")
+        user_display = put_vietnamese_text(user_display, f"Goc: {self._state.user_angle:.1f} do", (35, 60), COLORS['text'], 14)
+        user_display = put_vietnamese_text(user_display, f"Muc tieu: {self._state.target_angle:.1f} do", (35, 85), COLORS['info'], 14)
         
-        # Combine views
-        combined = combine_frames_horizontal([user_display, ref_display, dashboard], h)
+        error = abs(self._state.user_angle - self._state.target_angle)
+        err_color = COLORS['success'] if error < 15 else COLORS['warning'] if error < 30 else COLORS['error']
+        user_display = put_vietnamese_text(user_display, f"Sai so: {error:.1f} do", (35, 110), err_color, 14)
+        
+        # Điểm số trên User View
+        score_color = COLORS['success'] if self._state.current_score >= 70 else COLORS['warning'] if self._state.current_score >= 50 else COLORS['error']
+        user_display = draw_panel(user_display, (20, h - 150), (240, 130), "DIEM SO")
+        user_display = put_vietnamese_text(user_display, f"Hien tai: {self._state.current_score:.0f}", (35, h - 110), score_color, 16)
+        user_display = put_vietnamese_text(user_display, f"Tr.Binh: {self._state.average_score:.0f}", (35, h - 80), COLORS['text'], 14)
+        user_display = draw_progress_bar(user_display, (35, h - 55), (190, 10), self._state.current_score/100.0, score_color)
+        
+        # Thông tin Phase trên Ref View
+        ref_display = draw_panel(ref_display, (20, 20), (220, 110), "DONG BO")
+        phase = self._state.motion_phase.lower()
+        phase_color = PHASE_COLORS.get(phase, (128, 128, 128))
+        phase_name = PHASE_NAMES_VI.get(phase, phase.upper())
+        ref_display = put_vietnamese_text(ref_display, f"Giai doan: {phase_name}", (35, 60), phase_color, 14)
+        ref_display = put_vietnamese_text(ref_display, f"Hiep tap: {self._state.rep_count}", (35, 85), COLORS['text'], 14)
+
+        if self._video_engine:
+            progress = self._video_engine.current_frame / max(1, self._video_engine.total_frames)
+            ref_w_prog = ref_display.shape[1]
+            ref_display = draw_progress_bar(ref_display, (20, h - 35), (ref_w_prog - 40, 10), progress, COLORS['info'])
+
+        # === COMBINE USER + REF HORIZONTALLY ===
+        target_h = h
+        user_h, user_w = user_display.shape[:2]
+        ref_h, ref_w = ref_display.shape[:2]
+
+        new_user_w = int(user_w * target_h / max(1, user_h))
+        user_resized = cv2.resize(user_display, (new_user_w, target_h))
+
+        new_ref_w = int(ref_w * target_h / max(1, ref_h))
+        ref_resized = cv2.resize(ref_display, (new_ref_w, target_h))
+
+        combined = np.hstack([user_resized, ref_resized])
         
         # === UPDATE SYNC & SCORING (MULTI-JOINT) ===
         if self._sync_controller and self._video_engine:
-            # Update sync controller với primary joint
             self._state.sync_state = self._sync_controller.update(
                 self._state.user_angle,
                 self._video_engine.current_frame,
@@ -1011,188 +788,22 @@ class MemotionAppV2:
             self._state.motion_phase = self._state.sync_state.current_phase.value
             self._state.rep_count = self._state.sync_state.rep_count
             
-            # === MULTI-JOINT SCORING ===
-            # Tính điểm trung bình có trọng số của TẤT CẢ các khớp
             multi_joint_score = self._calculate_multi_joint_score()
-            
-            # Smooth score để tránh nhảy quá nhanh
             self._state.current_score = 0.7 * self._state.current_score + 0.3 * multi_joint_score
             
-            # Track score history để tính average (sử dụng multi-joint score)
             if len(self._state.target_angles_dict) > 0:
                 self._score_history.append(multi_joint_score)
                 if len(self._score_history) > 0:
                     self._state.average_score = sum(self._score_history) / len(self._score_history)
         
-        # Track angles (primary joint cho backward compatibility)
         self._user_angles.append(self._state.user_angle)
         if self._state.target_angle > 0:
             self._ref_angles.append(self._state.target_angle)
-        
+            
         return combined
     
-    def _create_phase3_dashboard(self, height: int) -> np.ndarray:
-        """Tạo dashboard cho Phase 3 (Multi-joint)."""
-        width = 320  # Tăng width để hiển thị nhiều khớp
-        dashboard = np.zeros((height, width, 3), dtype=np.uint8)
-        dashboard[:] = (40, 40, 40)
-        
-        y = 20
-        
-        # Tiêu đề
-        dashboard = put_vietnamese_text(dashboard, "GIAI DOAN 3: DONG BO", (10, y), COLORS['info'], 14)
-        y += 28
-        
-        # Phase hiện tại
-        phase = self._state.motion_phase.lower()
-        phase_color = PHASE_COLORS.get(phase, (128, 128, 128))
-        phase_name = PHASE_NAMES_VI.get(phase, phase.upper())
-        
-        cv2.circle(dashboard, (25, y + 3), 8, phase_color, -1)
-        dashboard = put_vietnamese_text(dashboard, f"{phase_name.upper()} | Rep: {self._state.rep_count}", (40, y + 8), phase_color, 12)
-        y += 25
-        
-        # 4 phase indicators (compact)
-        phases = ["idle", "eccentric", "hold", "concentric"]
-        phase_x = 10
-        for p in phases:
-            p_color = PHASE_COLORS.get(p, (80, 80, 80))
-            if p == phase:
-                cv2.circle(dashboard, (phase_x + 8, y), 6, p_color, -1)
-            else:
-                cv2.circle(dashboard, (phase_x + 8, y), 6, p_color, 1)
-            phase_x += 75
-        y += 22
-        
-        # === MULTI-JOINT WEIGHTED SCORE ===
-        score_color = COLORS['success'] if self._state.current_score >= 70 else COLORS['warning'] if self._state.current_score >= 50 else COLORS['error']
-        dashboard = put_vietnamese_text(
-            dashboard, f"DIEM TONG: {self._state.current_score:.0f}/100 (TB: {self._state.average_score:.0f})",
-            (10, y), score_color, 14
-        )
-        y += 18
-        
-        # Score bar
-        score_bar_width = width - 30
-        score_progress = self._state.current_score / 100.0
-        cv2.rectangle(dashboard, (10, y), (10 + score_bar_width, y + 10), (60, 60, 60), -1)
-        cv2.rectangle(dashboard, (10, y), (10 + int(score_bar_width * score_progress), y + 10), score_color, -1)
-        y += 22
-        
-        # === MULTI-JOINT DETAILS ===
-        dashboard = put_vietnamese_text(dashboard, f"CHI TIET KHOP ({len(self._state.active_joints)} khop):", (10, y), (150, 150, 150), 11)
-        y += 18
-        
-        # Hiển thị từng khớp đang hoạt động với điểm số
-        for joint_type in self._state.active_joints:
-            if y > height - 100:  # Tránh vẽ ra ngoài
-                break
-            
-            joint_name = JOINT_NAMES.get(joint_type, joint_type.value)
-            # Rút gọn tên khớp
-            short_name = joint_name[:12] if len(joint_name) > 12 else joint_name
-            
-            user_ang = self._state.user_angles_dict.get(joint_type, 0)
-            target_ang = self._state.target_angles_dict.get(joint_type, 0)
-            joint_score = self._state.joint_scores_dict.get(joint_type, 0)
-            weight = self._state.joint_weights.get(joint_type, 0.5)
-            
-            # Màu theo điểm số của khớp
-            if joint_score >= 80:
-                j_color = COLORS['success']
-            elif joint_score >= 60:
-                j_color = COLORS['warning']
-            else:
-                j_color = COLORS['error']
-            
-            # Hiển thị compact: Tên | Góc/Target | Điểm
-            error = abs(user_ang - target_ang) if target_ang > 0 else 0
-            line_text = f"{short_name}: {user_ang:.0f}/{target_ang:.0f} | {joint_score:.0f}pt"
-            
-            # Weight indicator (thanh nhỏ bên phải)
-            dashboard = put_vietnamese_text(dashboard, line_text, (15, y), j_color, 10)
-            
-            # Mini progress bar cho từng khớp
-            bar_width = 60
-            bar_x = width - bar_width - 10
-            bar_progress = min(1.0, joint_score / 100.0)
-            cv2.rectangle(dashboard, (bar_x, y - 8), (bar_x + bar_width, y + 2), (50, 50, 50), -1)
-            cv2.rectangle(dashboard, (bar_x, y - 8), (bar_x + int(bar_width * bar_progress), y + 2), j_color, -1)
-            
-            y += 16
-        
-        y += 8
-        
-        # === PRIMARY JOINT DETAIL (larger display) ===
-        primary_joint = self._state.selected_joint or self._default_joint
-        primary_name = JOINT_NAMES.get(primary_joint, "Primary")
-        dashboard = put_vietnamese_text(dashboard, f"KHOP CHINH: {primary_name}", (10, y), COLORS['info'], 11)
-        y += 18
-        
-        # Primary angle comparison
-        dashboard = put_vietnamese_text(
-            dashboard, f"  Goc: {self._state.user_angle:.1f} -> Muc tieu: {self._state.target_angle:.1f}",
-            (10, y), COLORS['text'], 10
-        )
-        y += 16
-        
-        # Error display với màu sắc
-        error = abs(self._state.user_angle - self._state.target_angle)
-        if error < 10:
-            error_color = COLORS['success']
-            feedback = "TUYET VOI!"
-        elif error < 20:
-            error_color = COLORS['success']
-            feedback = "TOT!"
-        elif error < 30:
-            error_color = COLORS['warning']
-            feedback = "KHA"
-        else:
-            error_color = COLORS['error']
-            feedback = "DIEU CHINH!"
-        
-        dashboard = put_vietnamese_text(
-            dashboard, f"  Sai so: {error:.1f}do - {feedback}",
-            (10, y), error_color, 10
-        )
-        y += 18
-        
-        # Direction hint
-        if self._state.target_angle > 0:
-            if self._state.user_angle < self._state.target_angle - 10:
-                hint = "^ Nang cao hon!"
-                hint_color = COLORS['info']
-            elif self._state.user_angle > self._state.target_angle + 10:
-                hint = "v Ha thap hon!"
-                hint_color = COLORS['warning']
-            else:
-                hint = "= Giu nguyen!"
-                hint_color = COLORS['success']
-            dashboard = put_vietnamese_text(dashboard, f"  {hint}", (10, y), hint_color, 10)
-            y += 20
-        
-        # Fatigue & Pain (compact)
-        dashboard = put_vietnamese_text(
-            dashboard, f"Met moi: {self._state.fatigue_level}",
-            (10, y), COLORS['text'], 10
-        )
-        pain_color = COLORS['success'] if self._state.pain_level == "NONE" else COLORS['error']
-        dashboard = put_vietnamese_text(
-            dashboard, f"| Dau: {self._state.pain_level}",
-            (140, y), pain_color, 10
-        )
-        y += 25
-        
-        # Warning
-        if self._state.warning:
-            cv2.rectangle(dashboard, (5, y), (width - 5, y + 35), (0, 0, 100), -1)
-            dashboard = put_vietnamese_text(dashboard, f"CANH BAO: {self._state.warning[:30]}", (10, y + 20), COLORS['error'], 9)
-        
-        # Controls
-        dashboard = put_vietnamese_text(dashboard, "[SPACE] Dung/Tiep | [Q] Ket thuc", (10, height - 20), (100, 100, 100), 9)
-        
-        return dashboard
-    
+
+
     # ================== PHASE 4: SCORING ==================
     
     def _run_phase4(self, frame: np.ndarray) -> np.ndarray:
@@ -1200,27 +811,19 @@ class MemotionAppV2:
         output = frame.copy()
         h, w = frame.shape[:2]
         
-        # Overlay tối
+        # Làm tối nền nhẹ
         overlay = output.copy()
-        cv2.rectangle(overlay, (0, 0), (w, h), (30, 30, 30), -1)
-        cv2.addWeighted(overlay, 0.85, output, 0.15, 0, output)
+        cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.4, output, 0.6, 0, output)
         
-        # Tiêu đề
-        output = put_vietnamese_text(
-            output, "GIAI DOAN 4: KET QUA BUOI TAP",
-            (w // 2 - 180, 50), COLORS['info'], 22
-        )
+        # HUD Panel ở giữa
+        panel_w = 400
+        panel_h = 420
+        panel_x = w // 2 - panel_w // 2
+        panel_y = h // 2 - panel_h // 2
         
-        y = 110
+        output = draw_panel(output, (panel_x, panel_y), (panel_w, panel_h), "TONG KET BUOI TAP")
         
-        # Tổng số hiệp
-        output = put_vietnamese_text(
-            output, f"Tong so hiep: {self._state.rep_count}",
-            (100, y), COLORS['text'], 18
-        )
-        y += 45
-        
-        # Điểm trung bình
         score = self._state.average_score
         if score >= 80:
             grade = "XUAT SAC"
@@ -1231,22 +834,18 @@ class MemotionAppV2:
         else:
             grade = "CAN CO GANG"
             grade_color = COLORS['error']
+            
+        y_pos = panel_y + 60
+        output = put_vietnamese_text(output, f"Tong so hiep: {self._state.rep_count}", (panel_x + 20, y_pos), COLORS['text'], 16)
+        y_pos += 40
+        output = put_vietnamese_text(output, "Diem trung binh:", (panel_x + 20, y_pos), COLORS['text'], 16)
+        output = put_vietnamese_text(output, f"{score:.0f}", (panel_x + 180, y_pos - 10), score_color, 30)
+        y_pos += 40
+        output = put_vietnamese_text(output, f"Danh gia: {grade}", (panel_x + 20, y_pos), grade_color, 16)
+        y_pos += 40
         
-        output = put_vietnamese_text(
-            output, f"Diem trung binh: {score:.0f}/100",
-            (100, y), COLORS['text'], 18
-        )
-        y += 30
-        
-        output = put_vietnamese_text(
-            output, f"Danh gia: {grade}",
-            (100, y), grade_color, 20
-        )
-        y += 50
-        
-        # Chi tiết
-        output = put_vietnamese_text(output, "Chi tiet diem:", (100, y), (150, 150, 150), 14)
-        y += 28
+        output = put_vietnamese_text(output, "Chi tiet diem:", (panel_x + 20, y_pos), (150, 150, 150), 14)
+        y_pos += 30
         
         scorer_status = self._scorer.get_current_status()
         details = [
@@ -1256,86 +855,187 @@ class MemotionAppV2:
         ]
         
         for name, value in details:
-            output = put_vietnamese_text(
-                output, f"  {name}: {value:.0f}",
-                (100, y), COLORS['text'], 14
-            )
-            y += 25
+            output = put_vietnamese_text(output, f"  {name}:", (panel_x + 20, y_pos), COLORS['text'], 14)
+            output = draw_progress_bar(output, (panel_x + 200, y_pos - 5), (150, 10), value/100, COLORS['info'])
+            y_pos += 30
+            
+        y_pos += 10
+        output = put_vietnamese_text(output, "Khuyen nghi:", (panel_x + 20, y_pos), COLORS['info'], 14)
+        y_pos += 30
+        output = put_vietnamese_text(output, "- Tap luyen deu dan", (panel_x + 30, y_pos), COLORS['text'], 14)
+        y_pos += 25
+        output = put_vietnamese_text(output, "- Nghi ngoi du sau buoi tap", (panel_x + 30, y_pos), COLORS['text'], 14)
         
-        y += 25
-        
-        # Calibration info
-        output = put_vietnamese_text(
-            output, f"Goc toi da (calibrated): {self._state.user_max_angle:.1f}",
-            (100, y), COLORS['text'], 14
-        )
-        y += 35
-        
-        # Fatigue
-        output = put_vietnamese_text(
-            output, f"Muc do met moi: {self._state.fatigue_level}",
-            (100, y), COLORS['text'], 14
-        )
-        y += 40
-        
-        # Khuyến nghị
-        output = put_vietnamese_text(output, "Khuyen nghi:", (100, y), COLORS['info'], 16)
-        y += 28
-        
-        recommendations = [
-            "Tiep tuc tap luyen deu dan moi ngay",
-            "Tang dan cuong do theo tung tuan",
-            "Nghi ngoi day du giua cac buoi tap",
-        ]
-        
-        for rec in recommendations:
-            output = put_vietnamese_text(output, f"  - {rec}", (100, y), COLORS['text'], 13)
-            y += 24
-        
-        # Lưu thông báo
-        output = put_vietnamese_text(
-            output, "Ket qua da duoc luu vao log",
-            (100, h - 80), COLORS['success'], 14
-        )
-        
-        # Controls
-        output = put_vietnamese_text(
-            output, "[R] Tap lai tu dau | [Q] Thoat",
-            (w // 2 - 120, h - 40), COLORS['info'], 14
-        )
+        output = put_vietnamese_text(output, "[Q] Thoat | [R] Restart", (panel_x + 90, panel_y + panel_h - 30), (150, 150, 150), 14)
         
         return output
     
     # ================== MAIN LOOP ==================
     
-    def run(self, user_source: str = "webcam", display: bool = True) -> Dict:
-        """Chạy ứng dụng với luồng 4 phase."""
+    def setup_phase_test(self, phase: int) -> None:
+        """Thiết lập trạng thái giả lập để test từng phase riêng lẻ.
+        
+        Khi test phase N, các phase trước đó sẽ được bỏ qua với dữ liệu mặc định.
+        
+        Args:
+            phase: Số phase cần test (1-4)
+        """
+        self._test_phase = phase  # Lưu lại phase đang test
+        self._lock_phase = True   # Khóa không cho tự động chuyển phase
+        
+        if phase == 1:
+            # Phase 1: Bắt đầu bình thường từ Pose Detection
+            self._state.current_phase = AppPhase.PHASE1_DETECTION
+            print("[TEST] Phase 1: Nhan dien tu the")
+            print("  - Dung truoc camera de he thong nhan dien")
+            print("  - Phase se KHONG tu dong chuyen sang Phase 2")
+        
+        elif phase == 2:
+            # Phase 2: Bỏ qua Phase 1, giả lập pose detected
+            self._state.current_phase = AppPhase.PHASE2_CALIBRATION
+            self._state.pose_detected = True
+            self._state.detection_stable_count = self.DETECTION_STABLE_THRESHOLD
+            self._user_profile = UserProfile(user_id=f"test_user_{int(time.time())}")
+            
+            # Reset calibration state
+            self._state.calibration_queue_index = 0
+            self._state.calibrated_joints = {}
+            self._state.is_countdown_active = False
+            self._state.is_calibrating_joint = False
+            self._state.all_joints_calibrated = False
+            
+            print("[TEST] Phase 2: Calibration (Do gioi han van dong)")
+            print("  - Bo qua Phase 1 (pose da duoc nhan dien)")
+            print("  - Tu dong do 6 khop, KHONG chuyen sang Phase 3")
+        
+        elif phase == 3:
+            # Phase 3: Bỏ qua Phase 1 & 2, giả lập calibration data
+            self._state.pose_detected = True
+            self._state.calibration_complete = True
+            self._user_profile = UserProfile(user_id=f"test_user_{int(time.time())}")
+            
+            # Giả lập kết quả calibration mặc định cho 6 khớp
+            default_angles = {
+                JointType.LEFT_SHOULDER: 150.0,
+                JointType.RIGHT_SHOULDER: 150.0,
+                JointType.LEFT_ELBOW: 140.0,
+                JointType.RIGHT_ELBOW: 140.0,
+                JointType.LEFT_KNEE: 120.0,
+                JointType.RIGHT_KNEE: 120.0,
+            }
+            self._state.calibrated_joints = default_angles
+            self._state.user_max_angle = default_angles.get(
+                self._default_joint, 150.0
+            )
+            self._state.all_joints_calibrated = True
+            
+            # Chuyển vào Phase 3 (cần ref video)
+            if self._ref_video_path and Path(self._ref_video_path).exists():
+                self._transition_to_phase3()
+                print("[TEST] Phase 3: Motion Sync (Dong bo chuyen dong)")
+                print("  - Bo qua Phase 1 & 2 (dung du lieu calibration mac dinh)")
+                print(f"  - Calibration mac dinh: {default_angles}")
+                print("  - Phase se KHONG tu dong chuyen sang Phase 4")
+            else:
+                print("[ERROR] Phase 3 can video mau! Su dung: --ref-video <path>")
+                self._state.is_running = False
+                return
+        
+        elif phase == 4:
+            # Phase 4: Bỏ qua tất cả, giả lập kết quả scoring
+            self._state.current_phase = AppPhase.PHASE4_SCORING
+            self._state.pose_detected = True
+            self._state.calibration_complete = True
+            self._state.user_max_angle = 150.0
+            
+            # Giả lập calibration data
+            self._state.calibrated_joints = {
+                JointType.LEFT_SHOULDER: 150.0,
+                JointType.RIGHT_SHOULDER: 148.0,
+                JointType.LEFT_ELBOW: 138.0,
+                JointType.RIGHT_ELBOW: 142.0,
+                JointType.LEFT_KNEE: 118.0,
+                JointType.RIGHT_KNEE: 122.0,
+            }
+            
+            # Giả lập kết quả tập luyện
+            self._state.rep_count = 5
+            self._state.current_score = 78.5
+            self._state.average_score = 75.0
+            self._state.fatigue_level = "MODERATE"
+            self._state.pain_level = "NONE"
+            
+            # Giả lập scorer data
+            self._scorer.start_session("test_exercise", f"test_session_{int(time.time())}")
+            for i in range(50):
+                self._scorer.add_frame(30 + i * 2.4, i * 0.033, MotionPhase.ECCENTRIC)
+            self._scorer.complete_rep(150.0)
+            
+            print("[TEST] Phase 4: Scoring & Analysis (Ket qua)")
+            print("  - Bo qua Phase 1, 2, 3 (dung du lieu gia lap)")
+            print("  - Hien thi man hinh ket qua voi du lieu mau")
+        
+        else:
+            print(f"[ERROR] Phase khong hop le: {phase}. Chon 1-4.")
+            self._state.is_running = False
+    
+    def run(self, user_source: str = "webcam", display: bool = True, test_phase: Optional[int] = None) -> Dict:
+        """Chạy ứng dụng với luồng 4 phase.
+        
+        Args:
+            user_source: Nguồn video ('webcam' hoặc đường dẫn file)
+            display: Có hiển thị cửa sổ không
+            test_phase: Nếu chỉ định (1-4), chỉ chạy phase đó để test
+        """
         # Mở camera/video
         cap = cv2.VideoCapture(0 if user_source.lower() == "webcam" else user_source)
         if not cap.isOpened():
             print(f"[ERROR] Cannot open: {user_source}")
             return {}
-        
+
         # Init ref detector
         self._init_ref_detector()
-        
-        # Print banner
-        print("\n" + "=" * 60)
-        print("MEMOTION - He thong ho tro phuc hoi chuc nang v2.0")
-        print("=" * 60)
-        print("CHE DO TU DONG - Khong can nhan ENTER")
-        print("Cac giai doan:")
-        print("  1. Nhan dien tu the -> Tu dong chuyen sau 3 giay")
-        print("  2. Do gioi han 6 khop -> Tu dong chuyen sau 2 giay")
-        print("  3. Dong bo video mau -> Tu dong chuyen khi hoan tat")
-        print("  4. Cham diem va phan tich")
-        print("=" * 60)
-        print("[Q] Thoat | [R] Restart | [SPACE] Pause (Phase 3)")
-        print("=" * 60)
-        print()
-        
+
+        # === FULLSCREEN SETUP ===
+        if display:
+            cv2.namedWindow(self.WINDOW_NAME, cv2.WINDOW_NORMAL)
+            cv2.setWindowProperty(self.WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
         self._state.is_running = True
-        self._state.current_phase = AppPhase.PHASE1_DETECTION
+        self._lock_phase = False  # Mặc định không khóa phase
+        self._test_phase = None
+        
+        # === SETUP TEST PHASE nếu có ===
+        if test_phase is not None:
+            self.setup_phase_test(test_phase)
+            if not self._state.is_running:
+                cap.release()
+                return {}
+            
+            # Print banner cho test mode
+            print("\n" + "=" * 60)
+            print(f"MEMOTION v2.0 - TEST PHASE {test_phase}")
+            print("=" * 60)
+            print(f"Dang chay Phase {test_phase} doc lap (khong tu dong chuyen phase)")
+            print("[Q] Thoat | [R] Restart phase hien tai")
+            print("=" * 60)
+            print()
+        else:
+            # Print banner cho normal mode
+            print("\n" + "=" * 60)
+            print("MEMOTION - He thong ho tro phuc hoi chuc nang v2.0")
+            print("=" * 60)
+            print("CHE DO TU DONG - Khong can nhan ENTER")
+            print("Cac giai doan:")
+            print("  1. Nhan dien tu the -> Tu dong chuyen sau 3 giay")
+            print("  2. Do gioi han 6 khop -> Tu dong chuyen sau 2 giay")
+            print("  3. Dong bo video mau -> Tu dong chuyen khi hoan tat")
+            print("  4. Cham diem va phan tich")
+            print("=" * 60)
+            print("[Q] Thoat | [R] Restart | [SPACE] Pause (Phase 3)")
+            print("=" * 60)
+            print()
+            self._state.current_phase = AppPhase.PHASE1_DETECTION
         
         while self._state.is_running:
             ret, frame = cap.read()
@@ -1356,6 +1056,22 @@ class MemotionAppV2:
             # Handle phase
             if self._state.current_phase == AppPhase.PHASE1_DETECTION:
                 display_frame = self._run_phase1(frame, result)
+            
+            elif self._state.current_phase == AppPhase.COMPLETED:
+                # Phase test hoàn thành, hiện thông báo
+                display_frame = frame.copy()
+                h_f, w_f = display_frame.shape[:2]
+                overlay = display_frame.copy()
+                cv2.rectangle(overlay, (0, 0), (w_f, h_f), (30, 30, 30), -1)
+                cv2.addWeighted(overlay, 0.7, display_frame, 0.3, 0, display_frame)
+                display_frame = put_vietnamese_text(
+                    display_frame, f"PHASE {self._test_phase} - HOAN THANH!",
+                    (w_f // 2 - 150, h_f // 2 - 30), COLORS['success'], 24
+                )
+                display_frame = put_vietnamese_text(
+                    display_frame, "[R] Chay lai | [Q] Thoat",
+                    (w_f // 2 - 100, h_f // 2 + 30), COLORS['text'], 14
+                )
             
             elif self._state.current_phase == AppPhase.PHASE2_CALIBRATION:
                 display_frame = self._run_phase2(frame, result, timestamp_ms)
@@ -1442,7 +1158,8 @@ class MemotionAppV2:
             self._state.is_running = False
         
         elif key == 13:  # ENTER - Manual override (bỏ qua countdown)
-            self._advance_phase()
+            if not self._lock_phase:
+                self._advance_phase()
         
         elif key == ord(' '):
             # Phase 3: Pause/Resume video
@@ -1455,13 +1172,23 @@ class MemotionAppV2:
                         self._video_engine.play()
         
         elif key == ord('r'):
-            self._restart()
+            if self._lock_phase and self._test_phase:
+                # Trong test mode: restart lại phase đang test
+                self._restart()
+                self.setup_phase_test(self._test_phase)
+                print(f"[TEST] Restart Phase {self._test_phase}")
+            else:
+                self._restart()
         
         # TẤT CẢ phase transitions giờ đều TỰ ĐỘNG
         # ENTER chỉ là manual override để bỏ qua countdown
     
     def _advance_phase(self) -> None:
         """Chuyển phase tiếp theo (manual override - bỏ qua countdown)."""
+        # Nếu đang lock phase (test mode), không cho chuyển phase
+        if self._lock_phase:
+            return
+        
         if self._state.current_phase == AppPhase.PHASE1_DETECTION:
             # Manual override: cho phép bỏ qua countdown 3 giây
             if self._state.pose_detected:
@@ -1472,6 +1199,12 @@ class MemotionAppV2:
     
     def _transition_to_phase2(self) -> None:
         """Chuyển sang Phase 2 - Tự động đo 6 khớp."""
+        # Nếu đang lock phase (test mode Phase 1), đánh dấu completed
+        if self._lock_phase and self._test_phase == 1:
+            print("\n[TEST] Phase 1 HOAN THANH! Khong chuyen sang Phase 2.")
+            self._state.current_phase = AppPhase.COMPLETED
+            return
+        
         print("\n[PHASE 2] Bat dau Calibration tu dong cho 6 khop...")
         print("  Thu tu: Vai trai -> Vai phai -> Khuyu trai -> Khuyu phai -> Goi trai -> Goi phai")
         self._state.current_phase = AppPhase.PHASE2_CALIBRATION
@@ -1486,6 +1219,13 @@ class MemotionAppV2:
     
     def _transition_to_phase3(self) -> None:
         """Chuyển sang Phase 3 với dữ liệu calibration từ Phase 2 (Multi-joint)."""
+        # Nếu đang lock phase (test mode Phase 2), đánh dấu completed
+        if self._lock_phase and self._test_phase == 2:
+            print("\n[TEST] Phase 2 HOAN THANH! Khong chuyen sang Phase 3.")
+            print(f"[TEST] Ket qua calibration: {self._state.calibrated_joints}")
+            self._state.current_phase = AppPhase.COMPLETED
+            return
+        
         if not self._ref_video_path or not Path(self._ref_video_path).exists():
             print("[WARNING] Khong co video mau, chuyen sang Phase 4")
             self._transition_to_phase4()
@@ -1573,6 +1313,14 @@ class MemotionAppV2:
     
     def _transition_to_phase4(self) -> None:
         """Chuyển sang Phase 4."""
+        # Nếu đang lock phase (test mode Phase 3), đánh dấu completed
+        if self._lock_phase and self._test_phase == 3:
+            print("\n[TEST] Phase 3 HOAN THANH! Khong chuyen sang Phase 4.")
+            print(f"[TEST] Rep count: {self._state.rep_count}")
+            print(f"[TEST] Average score: {self._state.average_score:.1f}")
+            self._state.current_phase = AppPhase.COMPLETED
+            return
+        
         print("\n[PHASE 4] Hien thi ket qua...")
         self._state.current_phase = AppPhase.PHASE4_SCORING
         
@@ -1719,18 +1467,65 @@ def run_unit_tests():
 # ================== MAIN ==================
 
 def main():
-    parser = argparse.ArgumentParser(description="MEMOTION v2.0")
-    parser.add_argument("--source", type=str, default="webcam")
-    parser.add_argument("--ref-video", type=str, default=None)
+    parser = argparse.ArgumentParser(
+        description="MEMOTION v2.0 - He thong ho tro phuc hoi chuc nang",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Vi du su dung:
+  # Chay binh thuong voi webcam (4 phases)
+  python main_v2.py --ref-video videos/ref.mp4
+
+  # Chay voi video user thay vi webcam
+  python main_v2.py --user-video videos/user.mp4 --ref-video videos/ref.mp4
+
+  # Test tung phase rieng le
+  python main_v2.py --phase 1                                       # Pose Detection (webcam)
+  python main_v2.py --phase 1 --user-video videos/user.mp4          # Pose Detection (video)
+  python main_v2.py --phase 2                                       # Calibration (webcam)
+  python main_v2.py --phase 2 --user-video videos/user.mp4          # Calibration (video)
+  python main_v2.py --phase 3 --ref-video videos/ref.mp4            # Motion Sync (webcam)
+  python main_v2.py --phase 3 --user-video videos/user.mp4 --ref-video videos/ref.mp4
+  python main_v2.py --phase 4                                       # Scoring
+
+  # Chay unit tests
+  python main_v2.py --mode test
+"""
+    )
+    parser.add_argument("--source", type=str, default="webcam",
+                       help="Nguon video: 'webcam' hoac duong dan file (xem --user-video)")
+    parser.add_argument("--user-video", type=str, default=None,
+                       help="Duong dan video nguoi dung (thay cho webcam). "
+                            "Neu chi dinh, se dung video nay thay vi webcam. "
+                            "VD: --user-video videos/user.mp4")
+    parser.add_argument("--ref-video", type=str, default=None,
+                       help="Duong dan video mau (bat buoc cho Phase 3). "
+                            "VD: --ref-video videos/ref.mp4")
     parser.add_argument("--joint", type=str, default="left_shoulder",
                        choices=["left_shoulder", "right_shoulder",
                                "left_elbow", "right_elbow",
-                               "left_knee", "right_knee"])
-    parser.add_argument("--mode", type=str, choices=["run", "test"], default="run")
-    parser.add_argument("--headless", action="store_true")
-    parser.add_argument("--models-dir", type=str, default="./models")
-    parser.add_argument("--log-dir", type=str, default="./data/logs")
+                               "left_knee", "right_knee"],
+                       help="Khop mac dinh de theo doi")
+    parser.add_argument("--phase", type=int, choices=[1, 2, 3, 4], default=None,
+                       help="Chi chay mot phase cu the de test (1-4). "
+                            "Phase 1: Pose Detection, Phase 2: Calibration, "
+                            "Phase 3: Motion Sync (can --ref-video), Phase 4: Scoring")
+    parser.add_argument("--mode", type=str, choices=["run", "test"], default="run",
+                       help="Che do chay: 'run' (binh thuong) hoac 'test' (unit tests)")
+    parser.add_argument("--headless", action="store_true",
+                       help="Chay khong hien thi cua so")
+    parser.add_argument("--models-dir", type=str, default="./models",
+                       help="Thu muc chua models")
+    parser.add_argument("--log-dir", type=str, default="./data/logs",
+                       help="Thu muc luu log")
     args = parser.parse_args()
+    
+    # --user-video ghi de --source
+    if args.user_video:
+        if not Path(args.user_video).exists():
+            print(f"[ERROR] Video nguoi dung khong ton tai: {args.user_video}")
+            sys.exit(1)
+        args.source = args.user_video
+        print(f"[INFO] Su dung video nguoi dung: {args.user_video}")
     
     if args.mode == "test":
         run_unit_tests()
@@ -1774,7 +1569,17 @@ def main():
                 models_dir=args.models_dir
             )
             
-            app.run(user_source=args.source, display=not args.headless)
+            print(f"[INFO] Source: {args.source}")
+            if args.ref_video:
+                print(f"[INFO] Ref video: {args.ref_video}")
+            if args.phase:
+                print(f"[INFO] Test phase: {args.phase}")
+            
+            app.run(
+                user_source=args.source,
+                display=not args.headless,
+                test_phase=args.phase
+            )
             app.cleanup()
     
     except Exception as e:

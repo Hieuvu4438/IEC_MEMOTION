@@ -1,573 +1,827 @@
-# 📖 MEMOTION V2.0 - TÀI LIỆU CHI TIẾT
+# MEMOTION V2.0 - TAI LIEU KY THUAT CHI TIET
 
-> **File**: `main_v2.py`  
-> **Version**: 2.0.0  
-> **Author**: MEMOTION Team  
-> **Last Updated**: 2026-01-21  
-> **Total Lines**: 1788
-
----
-
-## 📋 MỤC LỤC
-
-1. [Tổng quan](#1-tổng-quan)
-2. [Kiến trúc ứng dụng](#2-kiến-trúc-ứng-dụng)
-3. [4 Giai đoạn hoạt động](#3-bốn-giai-đoạn-hoạt-động)
-4. [Data Structures](#4-data-structures)
-5. [Class MemotionAppV2](#5-class-memotionappv2)
-6. [Luồng hoạt động chi tiết](#6-luồng-hoạt-động-chi-tiết)
-7. [Phím điều khiển](#7-phím-điều-khiển)
-8. [Công thức tính điểm](#8-công-thức-tính-điểm)
-9. [Hướng dẫn sử dụng](#9-hướng-dẫn-sử-dụng)
-10. [Unit Tests](#10-unit-tests)
+> **File**: `main_v2.py` + `mediapipe_be/`
+> **Version**: 2.0.0
+> **Author**: MEMOTION Team
+> **Last Updated**: 2026-01-22
 
 ---
 
-## 1. TỔNG QUAN
+## MUC LUC
 
-### 1.1 Mục đích
-`main_v2.py` là **phiên bản nâng cấp** của ứng dụng MEMOTION, cung cấp:
-- Giao diện người dùng (UI) rõ ràng hơn
-- Luồng 4 phase được tách biệt với **AUTO TRANSITION**
-- **Automated Calibration** - tự động đo 6 khớp
-- **Multi-joint tracking** - theo dõi và tính điểm nhiều khớp cùng lúc
-- Real-time scoring với visual feedback
-- Interpolated target angle cho tracking mượt mà hơn
+1. [Tong quan](#1-tong-quan)
+2. [Kien truc he thong](#2-kien-truc-he-thong)
+3. [4 Giai doan hoat dong](#3-bon-giai-doan-hoat-dong)
+4. [Cac thuat toan su dung](#4-cac-thuat-toan-su-dung)
+5. [Backend Integration (mediapipe_be)](#5-backend-integration)
+6. [Data Structures](#6-data-structures)
+7. [Luong hoat dong chi tiet](#7-luong-hoat-dong-chi-tiet)
+8. [Cong thuc tinh diem](#8-cong-thuc-tinh-diem)
+9. [Huong dan su dung](#9-huong-dan-su-dung)
 
-### 1.2 Tính năng chính
+---
 
-| Tính năng | Mô tả |
+## 1. TONG QUAN
+
+### 1.1 Muc dich
+
+**MEMOTION** la he thong ho tro phuc hoi chuc nang cho nguoi gia su dung Computer Vision. He thong tap trung vao:
+
+- **An toan**: Khong ep nguoi dung vuot qua gioi han van dong
+- **Ca nhan hoa**: Dieu chinh muc tieu dua tren kha nang cua tung nguoi
+- **Theo doi dau**: Tu dong phat hien khi nguoi dung dau (qua FACS)
+- **Khuyen khich**: Phan hoi tich cuc, khong phan xet
+
+### 1.2 Tinh nang chinh
+
+| Tinh nang | Mo ta |
 |-----------|-------|
-| **4 Phases** | Pose Detection → Calibration → Motion Sync → Scoring |
-| **Auto Transition** | Tự động chuyển phase không cần nhấn ENTER |
-| **Automated Calibration** | Tự động đo 6 khớp theo thứ tự định sẵn |
-| **Multi-joint Tracking** | Theo dõi và tính điểm tất cả khớp đã calibrate |
-| **Weighted Scoring** | Điểm có trọng số theo loại bài tập |
-| **Real-time Scoring** | Tính điểm ngay lập tức dựa trên sai số góc |
-| **Visual Feedback** | Hiển thị màu sắc và text phản hồi |
-| **Target Interpolation** | Target angle liên tục thay vì từng checkpoint |
-| **Vietnamese UI** | Giao diện tiếng Việt (không dấu) |
+| **4 Phases** | Pose Detection -> Calibration -> Motion Sync -> Scoring |
+| **Auto Transition** | Tu dong chuyen phase khong can nhan ENTER |
+| **Automated Calibration** | Tu dong do 6 khop theo thu tu dinh san |
+| **Multi-joint Tracking** | Theo doi va tinh diem tat ca khop da calibrate |
+| **Weighted Scoring** | Diem co trong so theo loai bai tap |
+| **Pain Detection** | Phat hien dau qua bieu cam khuon mat (FACS) |
+| **DTW Analysis** | So sanh nhip dieu chuyen dong |
 
-### 1.3 Dependencies
+### 1.3 Tech Stack
 
-```python
-# Core dependencies
-import argparse, sys, os, time, threading
-from pathlib import Path
-from typing import Optional, Dict, List, Tuple, Any
-from queue import Queue
-from dataclasses import dataclass, field
-from enum import Enum
-import numpy as np
-import cv2
+| Technology | Purpose |
+|------------|---------|
+| **Python 3.10+** | Ngon ngu chinh |
+| **MediaPipe Tasks API** | Pose detection (33 landmarks), Face detection (478 landmarks) |
+| **OpenCV** | Xu ly video & hien thi |
+| **NumPy / SciPy** | Tinh toan khoa hoc, Procrustes analysis |
+| **FastDTW** | Dynamic Time Warping cho so sanh nhip dieu |
 
-# Internal modules
-from core import (
-    VisionDetector, DetectorConfig, JointType, JOINT_DEFINITIONS,
-    calculate_joint_angle, MotionPhase, SyncStatus, SyncState,
-    MotionSyncController, create_arm_raise_exercise, create_elbow_flex_exercise,
-    compute_single_joint_dtw, PoseLandmarkIndex, create_exercise_weights,
-)
-from modules import (
-    VideoEngine, PlaybackState, PainDetector, PainLevel,
-    HealthScorer, FatigueLevel, SafeMaxCalibrator, CalibrationState,
-    UserProfile,
-)
-from utils import (
-    SessionLogger, put_vietnamese_text, draw_skeleton, draw_panel,
-    draw_progress_bar, draw_phase_indicator, COLORS, draw_angle_arc,
-    combine_frames_horizontal,
-)
+---
+
+## 2. KIEN TRUC HE THONG
+
+### 2.1 So do tong quan
+
+```
++-------------------------------------------------------------------------+
+|                          MEMOTION SYSTEM                                |
++-------------------------------------------------------------------------+
+|                                                                         |
+|  +----------------------+     +----------------------+                  |
+|  |   main_v2.py (UI)    |     | mediapipe_be (API)   |                  |
+|  |   MemotionAppV2      |     | MemotionEngine       |                  |
+|  +----------+-----------+     +----------+-----------+                  |
+|             |                            |                              |
+|             +------------+---------------+                              |
+|                          |                                              |
+|             +------------v-----------+                                  |
+|             |      CORE MODULES      |                                  |
+|             +------------------------+                                  |
+|             |                        |                                  |
+|  +----------v----------+  +----------v----------+                       |
+|  | core/               |  | modules/            |                       |
+|  | - detector.py       |  | - calibration.py    |                       |
+|  | - kinematics.py     |  | - scoring.py        |                       |
+|  | - synchronizer.py   |  | - pain_detection.py |                       |
+|  | - dtw_analysis.py   |  | - video_engine.py   |                       |
+|  | - procrustes.py     |  | - target_generator  |                       |
+|  +---------------------+  +---------------------+                       |
+|                                                                         |
++-------------------------------------------------------------------------+
+```
+
+### 2.2 Hai phien ban
+
+| Phien ban | Location | Muc dich | Co UI |
+|-----------|----------|----------|-------|
+| **Demo/Test** | `mediapipe/main_v2.py` | Test local voi OpenCV | Co |
+| **Backend** | `mediapipe_be/service/` | Production (FastAPI, WebSocket) | Khong |
+
+### 2.3 State Machine - AppPhase
+
+```
++----------------------------------------------------------------------+
+|                    APPLICATION PHASES (AUTO TRANSITION)               |
++----------------------------------------------------------------------+
+|                                                                       |
+|   +-----------------+                                                 |
+|   |     PHASE 1     |   Pose Detection                                |
+|   |    DETECTION    |   - Nhan dien skeleton                          |
+|   |                 |   - Doi stable 30 frames                        |
+|   +--------+--------+                                                 |
+|            | [AUTO] Countdown 3 giay khi pose_detected                |
+|            v                                                          |
+|   +-----------------+                                                 |
+|   |     PHASE 2     |   Automated Calibration                         |
+|   |   CALIBRATION   |   - Tu dong do 6 khop theo thu tu               |
+|   |   (AUTOMATED)   |   - Countdown 5 giay cho moi khop               |
+|   +--------+--------+                                                 |
+|            | [AUTO] 2 giay sau khi do xong 6 khop                     |
+|            v                                                          |
+|   +-----------------+                                                 |
+|   |     PHASE 3     |   Motion Sync (Multi-joint)                     |
+|   |      SYNC       |   - Dong bo voi video mau                       |
+|   |  (MULTI-JOINT)  |   - Tinh diem real-time cho TAT CA khop         |
+|   +--------+--------+                                                 |
+|            | [AUTO] Khi video ket thuc / SyncStatus.COMPLETE          |
+|            v                                                          |
+|   +-----------------+                                                 |
+|   |     PHASE 4     |   Scoring                                       |
+|   |    SCORING      |   - Hien thi ket qua                            |
+|   |                 |   - Luu bao cao                                 |
+|   +-----------------+                                                 |
+|                                                                       |
++----------------------------------------------------------------------+
 ```
 
 ---
 
-## 2. KIẾN TRÚC ỨNG DỤNG
+## 3. BON GIAI DOAN HOAT DONG
 
-### 2.1 Sơ đồ tổng quan
+### 3.1 PHASE 1: Pose Detection
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            MEMOTION V2.0                                    │
-│                           (main_v2.py)                                      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                         AppState (Dataclass)                         │   │
-│  │  - current_phase: AppPhase                                           │   │
-│  │  - is_running, is_paused                                             │   │
-│  │  - Phase 1-4 specific states                                         │   │
-│  │  - user_angle, target_angle, scores, etc.                            │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                    │                                        │
-│                                    ▼                                        │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                        MemotionAppV2 (Class)                         │   │
-│  │                                                                       │   │
-│  │   Components:                    Methods:                             │   │
-│  │   ├─ VisionDetector             ├─ run()                             │   │
-│  │   ├─ VideoEngine                ├─ _run_phase1()                     │   │
-│  │   ├─ MotionSyncController       ├─ _run_phase2()                     │   │
-│  │   ├─ SafeMaxCalibrator          ├─ _run_phase3()                     │   │
-│  │   ├─ PainDetector               ├─ _run_phase4()                     │   │
-│  │   ├─ HealthScorer               ├─ _handle_key()                     │   │
-│  │   └─ SessionLogger              └─ _transition_to_phaseX()           │   │
-│  │                                                                       │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+**Muc dich**: Nhan dien tu the nguoi dung, dam bao MediaPipe detect duoc skeleton on dinh.
 
-### 2.2 State Machine - AppPhase
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                    APPLICATION PHASES (AUTO TRANSITION)              │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│   ┌───────────────┐                                                  │
-│   │    PHASE1     │   Pose Detection                                 │
-│   │   DETECTION   │   - Nhận diện skeleton                           │
-│   │               │   - Đợi stable 30 frames                         │
-│   └───────┬───────┘                                                  │
-│           │ [AUTO] Countdown 3 giây khi pose_detected                │
-│           ▼                                                          │
-│   ┌───────────────┐                                                  │
-│   │    PHASE2     │   Automated Calibration                          │
-│   │  CALIBRATION  │   - Tự động đo 6 khớp theo thứ tự                │
-│   │  (AUTOMATED)  │   - Countdown 5 giây cho mỗi khớp                │
-│   └───────┬───────┘                                                  │
-│           │ [AUTO] 2 giây sau khi đo xong 6 khớp                     │
-│           ▼                                                          │
-│   ┌───────────────┐                                                  │
-│   │    PHASE3     │   Motion Sync (Multi-joint)                      │
-│   │     SYNC      │   - Đồng bộ với video mẫu                        │
-│   │ (MULTI-JOINT) │   - Tính điểm real-time cho TẤT CẢ khớp          │
-│   └───────┬───────┘                                                  │
-│           │ [AUTO] Khi video kết thúc / SyncStatus.COMPLETE          │
-│           ▼                                                          │
-│   ┌───────────────┐                                                  │
-│   │    PHASE4     │   Scoring                                        │
-│   │   SCORING     │   - Hiển thị kết quả                             │
-│   │               │   - Lưu báo cáo                                  │
-│   └───────┬───────┘                                                  │
-│           │ [Q] hoặc [R]                                             │
-│           ▼                                                          │
-│   ┌───────────────┐                                                  │
-│   │   COMPLETED   │   Kết thúc                                       │
-│   └───────────────┘                                                  │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 3. BỐN GIAI ĐOẠN HOẠT ĐỘNG
-
-### 3.1 PHASE 1: Pose Detection (AUTO TRANSITION)
-
-**Mục đích**: Nhận diện tư thế người dùng, đảm bảo MediaPipe detect được skeleton ổn định.
-
-**Logic hoạt động**:
+**Thuat toan**:
 ```python
-PHASE1_COUNTDOWN_DURATION = 3.0  # 3 giây countdown
+PHASE1_STABLE_FRAMES_REQUIRED = 30
+PHASE1_COUNTDOWN_DURATION = 3.0  # giay
 
 def _run_phase1(self, frame, result):
-    # 1. Hiển thị hướng dẫn
-    # 2. Kiểm tra result.has_pose()
-    # 3. Nếu có pose:
-    #    - Vẽ skeleton
-    #    - Tăng detection_stable_count
-    #    - Nếu đủ 30 frames → pose_detected = True
-    #    - Bắt đầu countdown 3 giây
-    #    - Khi countdown kết thúc → TỰ ĐỘNG _transition_to_phase2()
-    # 4. Nếu mất pose: reset countdown
+    if result.has_pose():
+        self._state.detection_stable_count += 1
+        progress = detection_stable_count / PHASE1_STABLE_FRAMES_REQUIRED
+
+        if detection_stable_count >= PHASE1_STABLE_FRAMES_REQUIRED:
+            self._state.pose_detected = True
+
+            # Bat dau countdown
+            if not phase1_countdown_active:
+                phase1_countdown_start = time.time()
+                phase1_countdown_active = True
+
+            # Kiem tra countdown
+            elapsed = time.time() - phase1_countdown_start
+            if elapsed >= PHASE1_COUNTDOWN_DURATION:
+                self._transition_to_phase2()  # AUTO TRANSITION
+    else:
+        # Mat pose -> Reset
+        detection_stable_count = 0
+        phase1_countdown_active = False
 ```
 
-**UI Elements**:
-```
-┌────────────────────────────────────────────┐
-│ GIAI DOAN 1: NHAN DIEN TU THE              │
-│                                            │
-│   Hay dung truoc camera...                 │
-│   Dam bao toan than...                     │
-│   Dung yen cho den khi...                  │
-│   He thong se tu dong chuyen sang Phase 2  │
-│                                            │
-│   [========>          ] 45%                │
-│   Dang xac nhan...                         │
-│                                            │
-│   (Khi pose_detected):                     │
-│           ┌───┐                            │
-│           │ 3 │  <-- Countdown lớn         │
-│           └───┘                            │
-│   Dung yen, chuan bi do gioi han...        │
-└────────────────────────────────────────────┘
-```
-
-**Điều kiện chuyển Phase 2**:
+**Dieu kien chuyen Phase 2**:
 - `pose_detected == True` (sau 30 frames stable)
-- **TỰ ĐỘNG** sau countdown 3 giây
-- Hoặc nhấn `ENTER` để bỏ qua countdown (manual override)
+- **TU DONG** sau countdown 3 giay
 
 ---
 
-### 3.2 PHASE 2: Automated Calibration (6 khớp)
+### 3.2 PHASE 2: Automated Calibration
 
-**Mục đích**: Tự động đo giới hạn vận động (Range of Motion) an toàn của 6 khớp.
+**Muc dich**: Tu dong do gioi han van dong (Range of Motion) an toan cua 6 khop.
 
-**Calibration Queue** (thứ tự đo):
+**Calibration Queue** (thu tu do):
 ```python
 CALIBRATION_QUEUE = [
-    JointType.LEFT_SHOULDER,   # 1. Vai trái
-    JointType.RIGHT_SHOULDER,  # 2. Vai phải
-    JointType.LEFT_ELBOW,      # 3. Khuỷu tay trái
-    JointType.RIGHT_ELBOW,     # 4. Khuỷu tay phải
-    JointType.LEFT_KNEE,       # 5. Đầu gối trái
-    JointType.RIGHT_KNEE,      # 6. Đầu gối phải
+    JointType.LEFT_SHOULDER,   # 1. Vai trai
+    JointType.RIGHT_SHOULDER,  # 2. Vai phai
+    JointType.LEFT_ELBOW,      # 3. Khuyu tay trai
+    JointType.RIGHT_ELBOW,     # 4. Khuyu tay phai
+    JointType.LEFT_KNEE,       # 5. Dau goi trai
+    JointType.RIGHT_KNEE,      # 6. Dau goi phai
 ]
-
-CALIBRATION_COUNTDOWN_DURATION = 5.0  # 5 giây chuẩn bị mỗi khớp
-
-# Hướng dẫn tư thế theo loại khớp
-JOINT_POSITION_INSTRUCTIONS = {
-    JointType.LEFT_SHOULDER: "Moi ba dung NGANG",
-    JointType.RIGHT_SHOULDER: "Moi ba dung NGANG",
-    JointType.LEFT_ELBOW: "Moi ba dung NGANG",
-    JointType.RIGHT_ELBOW: "Moi ba dung NGANG",
-    JointType.LEFT_KNEE: "Moi ba dung DOC",
-    JointType.RIGHT_KNEE: "Moi ba dung DOC",
-}
 ```
 
-**Logic hoạt động**:
+**Thuat toan Safe-Max Calibration**:
+```
++---------------------------+
+| THU THAP GOC (5 giay)     |
+| - Ghi nhan goc moi frame  |
+| - raw_angles = [...]      |
++------------+--------------+
+             |
+             v
++---------------------------+
+| MEDIAN FILTER             |
+| - Lam muot chuoi goc      |
+| - Loai bo nhieu           |
++------------+--------------+
+             |
+             v
++---------------------------+
+| LOAI BO OUTLIERS          |
+| - Loai bo goc ngoai       |
+|   2 * standard deviation  |
++------------+--------------+
+             |
+             v
++---------------------------+
+| TINH MAX ON DINH          |
+| - Percentile 95           |
+| - Khong lay max tuyet doi |
++---------------------------+
+```
+
+**Code chi tiet**:
 ```python
-def _run_phase2(self, frame, result, timestamp_ms):
-    # 1. Lấy khớp hiện tại từ CALIBRATION_QUEUE[queue_index]
-    # 2. Nếu all_joints_calibrated:
-    #    - Hiển thị kết quả
-    #    - Tự động chuyển Phase 3 sau 2 giây
-    # 3. Nếu chưa bắt đầu countdown cho khớp:
-    #    - Bắt đầu countdown 5 giây
-    # 4. Nếu đang countdown:
-    #    - Hiển thị hướng dẫn tư thế
-    #    - Hiển thị số đếm ngược
-    #    - Khi countdown hết → bắt đầu đo
-    # 5. Nếu đang đo (is_calibrating_joint):
-    #    - Thu thập góc từ mỗi frame
-    #    - Khi calibrator COMPLETED → lưu và chuyển khớp tiếp
+def finish_calibration(self):
+    angles = np.array(collected_angles)
+
+    # Step 1: Median Filter - lam muot
+    smoothed_angles = self._median_filter(angles)
+
+    # Step 2: Loai bo outliers (ngoai 2 std)
+    mean = np.mean(smoothed_angles)
+    std = np.std(smoothed_angles)
+    mask = (smoothed_angles >= mean - 2*std) & (smoothed_angles <= mean + 2*std)
+    filtered_angles = smoothed_angles[mask]
+
+    # Step 3: Percentile 95 (khong lay max tuyet doi)
+    max_angle = np.percentile(filtered_angles, 95)
+
+    # Tinh do tin cay
+    confidence = max(0.0, 1.0 - (std / 30.0))
+
+    return JointCalibrationData(max_angle=max_angle, confidence=confidence)
 ```
 
-**Quy trình tự động cho MỖI khớp**:
-```
-[Khớp N trong queue]
-        │
-        ▼
-┌─────────────────────────────────┐
-│ COUNTDOWN 5 giây                │
-│ - Hiển thị tên khớp             │
-│ - Hiển thị hướng dẫn tư thế     │
-│ - "Bat dau sau: 5... 4... 3..." │
-└────────────┬────────────────────┘
-             │ Auto
-             ▼
-┌─────────────────────────────────┐
-│ CalibrationState.COLLECTING     │
-│ - Thu thập góc 5 giây           │
-│ - Median filter loại nhiễu      │
-│ - Progress bar hiển thị         │
-└────────────┬────────────────────┘
-             │ Auto complete
-             ▼
-┌─────────────────────────────────┐
-│ Lưu kết quả vào calibrated_joints │
-│ calibration_queue_index += 1    │
-│ → Chuyển sang khớp tiếp theo    │
-└─────────────────────────────────┘
-```
-
-**UI hiển thị**:
-```
-┌────────────────────────────────────────────────────────────┐
-│ GIAI DOAN 2: DO GIOI HAN VAN DONG (TU DONG)                │
-│                                                            │
-│ Tien do: 2/6 khop                                          │
-│ [===========>                    ] 33%                     │
-│                                                            │
-│ Danh sach khop:                                            │
-│   [OK] Vai trai: 145.3 do                                  │
-│   [OK] Vai phai: 142.8 do                                  │
-│   >>> Khuyu tay trai (dang do)                             │
-│       Khuyu tay phai                                       │
-│       Dau goi trai                                         │
-│       Dau goi phai                                         │
-│                                                            │
-│   Moi ba dung NGANG            <-- Huong dan tu the        │
-│   Bat dau sau: 3 giay          <-- Countdown               │
-│   [==============>     ]       <-- Progress                │
-└────────────────────────────────────────────────────────────┘
-```
-
-**Điều kiện chuyển Phase 3**:
-- `all_joints_calibrated == True` (đã đo xong 6 khớp)
-- **TỰ ĐỘNG** sau 2 giây
-- Profile được lưu vào `./data/user_profiles/`
+**Dieu kien chuyen Phase 3**:
+- `all_joints_calibrated == True` (da do xong 6 khop)
+- **TU DONG** sau 2 giay
 
 ---
 
-### 3.3 PHASE 3: Motion Sync (MULTI-JOINT)
+### 3.3 PHASE 3: Motion Sync (Multi-joint)
 
-**Mục đích**: Đồng bộ chuyển động người dùng với video mẫu, tính điểm real-time cho **TẤT CẢ các khớp đã calibrated**.
+**Muc dich**: Dong bo chuyen dong nguoi dung voi video mau, tinh diem real-time cho **TAT CA cac khop da calibrated**.
+
+**Finite State Machine (FSM) cho Motion Phase**:
+```
++-------+     +------------+     +------+     +------------+
+| IDLE  | --> | ECCENTRIC  | --> | HOLD | --> | CONCENTRIC |
++---+---+     +------------+     +------+     +-----+------+
+    ^                                               |
+    |                                               |
+    +-----------------------------------------------+
+                    (1 rep complete)
+```
+
+**Giai thich cac pha**:
+| Phase | Tieng Viet | Mo ta |
+|-------|------------|-------|
+| IDLE | Nghi | Tu the nghi, chuan bi bat dau |
+| ECCENTRIC | Duoi co | Pha "di ra" - co duoi ra (vd: ha nguoi xuong squat) |
+| HOLD | Giu | Giu tai diem cao trao (vd: day squat) |
+| CONCENTRIC | Co co | Pha "di ve" - co co lai (vd: dung len tu squat) |
 
 **Multi-joint Tracking Flow**:
 ```python
 def _run_phase3(self, user_frame, ref_frame, result, timestamp):
-    # === MULTI-JOINT ANGLE CALCULATION ===
-    # 1. Tính góc cho TẤT CẢ các khớp đang hoạt động
-    self._state.user_angles_dict = self._calculate_all_joint_angles(landmarks)
-    
-    # === MULTI-JOINT TARGET CALCULATION ===
-    # 2. Tính target cho TẤT CẢ các khớp
-    self._state.target_angles_dict = self._interpolate_all_joint_targets(
-        current_frame, total_frames
-    )
-    
-    # === MULTI-JOINT SCORING ===
-    # 3. Tính điểm có trọng số cho từng khớp
-    multi_joint_score = self._calculate_multi_joint_score()
-    
-    # 4. Smooth score
-    self._state.current_score = 0.7 * current_score + 0.3 * multi_joint_score
-```
-
-**Layout hiển thị (3 panels)**:
-```
-┌───────────────────┬───────────────────┬─────────────────────┐
-│    USER VIEW      │   REFERENCE VIEW  │  DASHBOARD (320px)  │
-│                   │                   │                     │
-│   [Skeleton]      │   [Skeleton]      │ GIAI DOAN 3: DONG BO│
-│   Goc: 85.3       │   VIDEO MAU       │ ● HOLD | Rep: 3     │
-│   Muc tieu: 90    │   ● GIU           │ ○ ○ ● ○             │
-│   Sai so: 4.7     │                   │                     │
-│   Diem: 82        │   [=======>    ]  │ DIEM TONG: 82/100   │
-│                   │                   │ [=============>   ] │
-│   ┌────────────┐  │   || CHO          │                     │
-│   │DAT MUC TIEU│  │                   │ CHI TIET KHOP (6):  │
-│   └────────────┘  │                   │ Vai trai: 85/90|92pt│
-│                   │                   │ Vai phai: 82/88|85pt│
-│                   │                   │ Khuyu T: 78/85|75pt │
-│                   │                   │ ...                 │
-│                   │                   │                     │
-│                   │                   │ KHOP CHINH: Vai trai│
-│                   │                   │ ^ Nang cao hon!     │
-│                   │                   │ Met moi: FRESH      │
-└───────────────────┴───────────────────┴─────────────────────┘
-```
-
-**Exercise Type Detection**:
-```python
-# Xác định loại bài tập từ primary joint
-if primary_joint in (LEFT_ELBOW, RIGHT_ELBOW):
-    exercise_type = "bicep_curl"
-elif primary_joint in (LEFT_KNEE, RIGHT_KNEE):
-    exercise_type = "squat"
-else:
-    exercise_type = "arm_raise"
-
-# Lấy trọng số cho từng khớp
-joint_weights = create_exercise_weights(exercise_type)
-```
-
-**Motion Phase FSM**:
-```
-IDLE ──► ECCENTRIC ──► HOLD ──► CONCENTRIC ──► IDLE
- │                                              │
- └──────────────────────────────────────────────┘
-                    (1 rep complete)
-```
-
-**Target Angle Interpolation (per joint)**:
-```python
-def _interpolate_target_angle(self, current_frame, total_frames, joint_type):
-    """
-    Tính target angle cho MỘT khớp cụ thể.
-    Scale target dựa trên user_max_angle đã calibrated.
-    """
-    # Tìm checkpoint trước và sau
-    # Interpolate: target = prev + progress * (next - prev)
-    # Scale theo user_max nếu cần
-
-def _interpolate_all_joint_targets(self, current_frame, total_frames):
-    """Tính target cho TẤT CẢ các khớp đang hoạt động."""
-    targets = {}
+    # === TINH GOC CHO TAT CA KHOP ===
+    user_angles_dict = {}
     for joint_type in active_joints:
-        targets[joint_type] = self._interpolate_target_angle(
-            current_frame, total_frames, joint_type
-        )
-    return targets
-```
+        angle = calculate_joint_angle(landmarks, joint_type, use_3d=True)
+        user_angles_dict[joint_type] = angle
 
-**Multi-joint Score Calculation**:
-```python
-def _calculate_multi_joint_score(self):
-    """Tính điểm trung bình có trọng số."""
+    # === TINH TARGET CHO TAT CA KHOP ===
+    target_angles_dict = {}
+    for joint_type in active_joints:
+        target = _interpolate_target_angle(current_frame, total_frames, joint_type)
+        target_angles_dict[joint_type] = target
+
+    # === TINH DIEM CO TRONG SO ===
     total_weighted_score = 0.0
     total_weight = 0.0
-    
+
     for joint_type in active_joints:
         user_angle = user_angles_dict[joint_type]
         target_angle = target_angles_dict[joint_type]
         weight = joint_weights[joint_type]
-        
+
         joint_score = _calculate_realtime_score(user_angle, target_angle)
         joint_scores_dict[joint_type] = joint_score
-        
+
         total_weighted_score += joint_score * weight
         total_weight += weight
-    
-    return total_weighted_score / total_weight
+
+    multi_joint_score = total_weighted_score / total_weight
+
+    # === SMOOTH SCORE ===
+    current_score = 0.7 * current_score + 0.3 * multi_joint_score
 ```
 
-**Điều kiện chuyển Phase 4**:
-- `sync_status == SyncStatus.COMPLETE`
-- `PlaybackState.FINISHED`
+**Wait-for-User Logic**:
+```python
+def _check_sync_status(self, user_angle, ref_frame, timestamp):
+    next_checkpoint = get_next_checkpoint(ref_frame)
+
+    if next_checkpoint is None:
+        if ref_frame >= total_frames - 1:
+            return SyncStatus.COMPLETE
+        return SyncStatus.PLAY
+
+    # Chua den checkpoint -> chay binh thuong
+    if ref_frame < next_checkpoint.frame_index:
+        return SyncStatus.PLAY
+
+    # Da den checkpoint - kiem tra user
+    if next_checkpoint.is_reached(user_angle):
+        return SyncStatus.PLAY  # User dat -> tiep tuc
+
+    # User chua dat -> cho
+    if wait_duration > MAX_WAIT_TIME:
+        return SyncStatus.SKIP  # Cho qua lau -> bo qua
+
+    return SyncStatus.PAUSE  # Cho user
+```
 
 ---
 
 ### 3.4 PHASE 4: Scoring & Results
 
-**Mục đích**: Hiển thị kết quả buổi tập, lưu báo cáo.
-
-**UI Elements**:
-```
-┌────────────────────────────────────────────────────────────────┐
-│                  GIAI DOAN 4: KET QUA BUOI TAP                 │
-├────────────────────────────────────────────────────────────────┤
-│                                                                │
-│   Tong so hiep: 5                                              │
-│                                                                │
-│   Diem trung binh: 82/100                                      │
-│   Danh gia: XUAT SAC                                           │
-│                                                                │
-│   Chi tiet diem:                                               │
-│     ROM (bien do): 85                                          │
-│     Stability (on dinh): 78                                    │
-│     Flow (mu mut): 80                                          │
-│                                                                │
-│   Goc toi da (calibrated): 145.3                               │
-│   Muc do met moi: FRESH                                        │
-│                                                                │
-│   Khuyen nghi:                                                 │
-│     - Tiep tuc tap luyen deu dan moi ngay                      │
-│     - Tang dan cuong do theo tung tuan                         │
-│     - Nghi ngoi day du giua cac buoi tap                       │
-│                                                                │
-│   Ket qua da duoc luu vao log                                  │
-│                                                                │
-│              [R] Tap lai tu dau | [Q] Thoat                    │
-└────────────────────────────────────────────────────────────────┘
-```
+**Muc dich**: Hien thi ket qua buoi tap, luu bao cao.
 
 **Grade System**:
 ```python
-if score >= 80: grade = "XUAT SAC"   # Xuất sắc
-if score >= 60: grade = "KHA"        # Khá
-else:           grade = "CAN CO GANG" # Cần cố gắng
+def get_grade(score: float) -> tuple:
+    if score >= 80:
+        return ("XUAT SAC", "green")
+    elif score >= 60:
+        return ("KHA", "yellow")
+    else:
+        return ("CAN CO GANG", "red")
 ```
 
 ---
 
-## 4. DATA STRUCTURES
+## 4. CAC THUAT TOAN SU DUNG
 
-### 4.1 AppPhase (Enum)
+### 4.1 Tinh goc khop (Kinematics)
 
-```python
-class AppPhase(Enum):
-    PHASE1_DETECTION = "phase1"    # Pose Detection
-    PHASE2_CALIBRATION = "phase2"  # Safe-Max Calibration
-    PHASE3_SYNC = "phase3"         # Motion Sync
-    PHASE4_SCORING = "phase4"      # Scoring & Analysis
-    COMPLETED = "completed"        # Hoàn thành
+**Cong thuc toan hoc**:
+```
+Goc giua 3 diem A, B, C (voi B la dinh goc):
+
+Vector BA = A - B
+Vector BC = C - B
+
+cos(theta) = (BA . BC) / (|BA| x |BC|)
+theta = arccos(cos(theta))
 ```
 
-### 4.2 AppState (Dataclass)
+**Code**:
+```python
+def calculate_angle(point_a, point_b, point_c, use_3d=True):
+    # Chuyen doi ve numpy array
+    a = _to_numpy(point_a, use_3d)
+    b = _to_numpy(point_b, use_3d)
+    c = _to_numpy(point_c, use_3d)
+
+    # Tao vector tu dinh goc B
+    vector_ba = a - b
+    vector_bc = c - b
+
+    # Tinh do dai (norm) cua cac vector
+    norm_ba = np.linalg.norm(vector_ba)
+    norm_bc = np.linalg.norm(vector_bc)
+
+    # Tinh dot product
+    dot_product = np.dot(vector_ba, vector_bc)
+
+    # Tinh cosine cua goc
+    cos_angle = dot_product / (norm_ba * norm_bc)
+    cos_angle = np.clip(cos_angle, -1.0, 1.0)  # Tranh loi so hoc
+
+    # Tinh goc bang arccos
+    angle_radians = np.arccos(cos_angle)
+    angle_degrees = np.degrees(angle_radians)
+
+    return float(angle_degrees)
+```
+
+**Dinh nghia cac khop**:
+```python
+JOINT_DEFINITIONS = {
+    # Khuyu tay: Vai -> Khuyu -> Co tay
+    JointType.LEFT_ELBOW: JointDefinition(
+        proximal=LEFT_SHOULDER,  # A
+        vertex=LEFT_ELBOW,       # B (dinh goc)
+        distal=LEFT_WRIST,       # C
+        normal_range=(0.0, 145.0)
+    ),
+
+    # Vai: Hong -> Vai -> Khuyu (do goc dang tay)
+    JointType.LEFT_SHOULDER: JointDefinition(
+        proximal=LEFT_HIP,
+        vertex=LEFT_SHOULDER,
+        distal=LEFT_ELBOW,
+        normal_range=(0.0, 180.0)
+    ),
+
+    # Dau goi: Hong -> Dau goi -> Mat ca
+    JointType.LEFT_KNEE: JointDefinition(
+        proximal=LEFT_HIP,
+        vertex=LEFT_KNEE,
+        distal=LEFT_ANKLE,
+        normal_range=(0.0, 140.0)
+    ),
+}
+```
+
+---
+
+### 4.2 Dynamic Time Warping (DTW)
+
+**Muc dich**: So sanh nhip dieu chuyen dong giua nguoi dung va video mau.
+
+**Tai sao can DTW thay vi so sanh truc tiep?**
+- Nguoi gia di chuyen voi toc do khac nhau
+- Co the dung lai giua chung
+- DTW "keo gian" thoi gian de tim su tuong dong toi uu
+
+**Cong thuc**:
+```
+DTW Matrix: D[i, j] = cost(i, j) + min(D[i-1, j], D[i, j-1], D[i-1, j-1])
+
+Trong do:
+  - cost(i, j) = |seq1[i] - seq2[j]|
+  - D[0, 0] = 0
+  - D[i, 0] = infinity (i > 0)
+  - D[0, j] = infinity (j > 0)
+```
+
+**Code Simple DTW**:
+```python
+def _simple_dtw(seq1, seq2):
+    n, m = len(seq1), len(seq2)
+
+    # Ma tran chi phi tich luy
+    dtw_matrix = np.full((n + 1, m + 1), np.inf)
+    dtw_matrix[0, 0] = 0
+
+    # Dien ma tran
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            cost = abs(seq1[i-1] - seq2[j-1])
+            dtw_matrix[i, j] = cost + min(
+                dtw_matrix[i-1, j],     # Insertion
+                dtw_matrix[i, j-1],     # Deletion
+                dtw_matrix[i-1, j-1]    # Match
+            )
+
+    # Backtrack de tim duong di
+    path = []
+    i, j = n, m
+    while i > 0 or j > 0:
+        path.append((i-1, j-1))
+        # ... backtrack logic
+
+    return dtw_matrix[n, m], path
+```
+
+**Weighted DTW cho nhieu khop**:
+```python
+def compute_weighted_dtw(user_sequences, ref_sequences, weights):
+    """
+    Total Distance = sum(weight_i * dtw_distance_i) / sum(weight_i)
+
+    Example weights cho bai tap gio tay:
+        weights = {
+            JointType.LEFT_SHOULDER: 1.0,   # Quan trong nhat
+            JointType.LEFT_ELBOW: 0.7,
+            JointType.LEFT_KNEE: 0.1,       # Khong lien quan
+        }
+    """
+    total_weighted_distance = 0.0
+    total_weight = 0.0
+
+    for joint_type, user_seq in user_sequences.items():
+        ref_seq = ref_sequences[joint_type]
+        weight = weights[joint_type]
+
+        # Tien xu ly: lam muot + chuan hoa
+        user_processed = preprocess_sequence(user_seq)
+        ref_processed = preprocess_sequence(ref_seq)
+
+        # Tinh DTW
+        distance, path = compute_dtw_distance(user_processed, ref_processed)
+        normalized = distance / max(len(user_seq), len(ref_seq))
+
+        total_weighted_distance += weight * normalized
+        total_weight += weight
+
+    final_distance = total_weighted_distance / total_weight
+
+    # Chuyen doi sang similarity score (0-100)
+    similarity_score = 100.0 * np.exp(-final_distance * 3)
+
+    return DTWResult(
+        distance=total_weighted_distance,
+        normalized_distance=final_distance,
+        similarity_score=similarity_score,
+        rhythm_quality=_evaluate_rhythm_quality(similarity_score)
+    )
+```
+
+**Tien xu ly chuoi truoc khi tinh DTW**:
+```python
+def preprocess_sequence(sequence, smooth_window=5, normalize=True):
+    arr = np.array(sequence, dtype=np.float64)
+
+    # 1. Lam muot bang moving average (giam nhieu)
+    if smooth_window > 1:
+        arr = uniform_filter1d(arr, size=smooth_window, mode='nearest')
+
+    # 2. Chuan hoa ve [0, 1] (de so sanh cong bang)
+    if normalize:
+        min_val, max_val = arr.min(), arr.max()
+        if max_val - min_val > 1e-6:
+            arr = (arr - min_val) / (max_val - min_val)
+
+    return arr
+```
+
+---
+
+### 4.3 Jerk Analysis (Phat hien met moi)
+
+**Dinh nghia**:
+```
+Jerk = d^3x/dt^3 (dao ham bac 3 cua vi tri)
+
+Y nghia:
+- Jerk thap = chuyen dong muot ma
+- Jerk cao = chuyen dong giat, khong kiem soat
+- Jerk tang dan qua cac rep = dau hieu met moi
+```
+
+**Code**:
+```python
+def _calculate_jerk(angles, timestamps):
+    if len(angles) < 4:
+        return 0.0
+
+    dt = np.diff(timestamps)
+    dt = np.where(dt < 1e-6, 1e-6, dt)  # Tranh chia cho 0
+
+    # Velocity (dao ham bac 1)
+    velocity = np.diff(angles) / dt
+
+    # Acceleration (dao ham bac 2)
+    dt2 = dt[:-1]
+    acceleration = np.diff(velocity) / dt2
+
+    # Jerk (dao ham bac 3)
+    dt3 = dt2[:-1]
+    jerk = np.diff(acceleration) / dt3
+
+    # Squared Jerk (chuan hoa theo thoi gian)
+    total_time = timestamps[-1] - timestamps[0]
+    squared_jerk = np.sum(jerk ** 2) / total_time
+
+    return squared_jerk
+```
+
+**Phat hien muc do met moi**:
+```python
+JERK_THRESHOLDS = {
+    FatigueLevel.LIGHT: 1.5,      # Tang 50%
+    FatigueLevel.MODERATE: 2.0,   # Tang 100%
+    FatigueLevel.HEAVY: 3.0,      # Tang 200%
+}
+
+def _check_fatigue(self):
+    if baseline_jerk is None:
+        return FatigueLevel.FRESH
+
+    current_jerk = jerk_values[-1]
+    jerk_ratio = current_jerk / baseline_jerk
+
+    if jerk_ratio >= 3.0:
+        return FatigueLevel.HEAVY
+    elif jerk_ratio >= 2.0:
+        return FatigueLevel.MODERATE
+    elif jerk_ratio >= 1.5:
+        return FatigueLevel.LIGHT
+    else:
+        return FatigueLevel.FRESH
+```
+
+---
+
+### 4.4 Pain Detection (FACS)
+
+**Facial Action Coding System (FACS)**: He thong ma hoa bieu cam khuon mat de phat hien dau.
+
+**Cac Action Units (AU) lien quan den dau**:
+```python
+PAIN_RELEVANT_AUS = {
+    "AU4": "Brow Lowerer",       # Chau may xuong
+    "AU6": "Cheek Raiser",       # Nang ma
+    "AU7": "Lid Tightener",      # Siết mi mat
+    "AU9": "Nose Wrinkler",      # Nhan mui
+    "AU10": "Upper Lip Raiser",  # Nang moi tren
+    "AU43": "Eyes Closed",       # Nham mat
+}
+```
+
+**Logic phat hien**:
+```python
+def analyze(self, face_landmarks):
+    # Tinh cac AU tu face landmarks (478 diem)
+    au_scores = self._compute_au_scores(face_landmarks)
+
+    # Tinh pain score
+    pain_score = (
+        0.3 * au_scores["AU4"] +
+        0.2 * au_scores["AU6"] +
+        0.2 * au_scores["AU7"] +
+        0.15 * au_scores["AU9"] +
+        0.15 * au_scores["AU43"]
+    )
+
+    # Phan loai muc do dau
+    if pain_score > 0.7:
+        return PainLevel.SEVERE
+    elif pain_score > 0.5:
+        return PainLevel.MODERATE
+    elif pain_score > 0.3:
+        return PainLevel.MILD
+    else:
+        return PainLevel.NONE
+```
+
+---
+
+### 4.5 Compensation Detection (Bu tru)
+
+**Muc dich**: Phat hien khi nguoi dung su dung dong tac bu tru de "gian lan" goc.
+
+**Cac loai bu tru phat hien**:
+```python
+def _calculate_compensation_score(self):
+    issues = []
+    penalties = []
+
+    # 1. SHOULDER HIKING (Nhun vai)
+    # Kiem tra chenh lech chieu cao vai trai/phai
+    if len(shoulder_heights) >= 5:
+        shoulder_diffs = [abs(left - right) for left, right in shoulder_heights]
+        if max(shoulder_diffs) > 0.08:  # > 8% chieu cao frame
+            issues.append("Vai khong deu (nang)")
+            penalties.append(40)
+        elif max(shoulder_diffs) > 0.05:
+            issues.append("Vai khong deu (nhe)")
+            penalties.append(20)
+
+    # 2. TRUNK LEAN (Nghieng than)
+    # Tinh goc nghieng tu mid-shoulder den mid-hip
+    if len(torso_tilts) >= 5:
+        max_tilt = np.max(np.abs(torso_tilts))
+        if max_tilt > 20:  # > 20 do
+            issues.append("Nghieng than nhieu")
+            penalties.append(35)
+        elif max_tilt > 15:
+            issues.append("Nghieng than")
+            penalties.append(20)
+
+    # 3. HIP SHIFT (Xoay hong)
+    if len(hip_positions) >= 5:
+        hip_diffs = [abs(left - right) for left, right in hip_positions]
+        if max(hip_diffs) > 0.08:
+            issues.append("Hong khong can bang")
+            penalties.append(25)
+
+    # Tinh diem: bat dau tu 100, tru penalties
+    total_penalty = sum(penalties)
+    score = max(0, 100 - total_penalty)
+
+    return score, issues
+```
+
+---
+
+## 5. BACKEND INTEGRATION
+
+### 5.1 MemotionEngine (Headless)
+
+`mediapipe_be/service/engine_service.py` cung cap class `MemotionEngine` - phien ban khong UI de tich hop vao backend.
+
+**Nguyen tac thiet ke**:
+1. **STATEFUL**: Moi instance co `self._state` rieng biet
+2. **HANDS-FREE**: Tu dong chuyen phase khi dat dieu kien
+3. **JSON-ONLY OUTPUT**: Khong tra ve object MediaPipe/NumPy tho
+
+**Usage (Multi-user Backend)**:
+```python
+from service import MemotionEngine, EngineConfig
+
+# Moi user co 1 engine instance rieng
+user_engines: Dict[str, MemotionEngine] = {}
+
+def handle_user_frame(user_id: str, frame: np.ndarray, timestamp_ms: int):
+    if user_id not in user_engines:
+        user_engines[user_id] = MemotionEngine.create_instance(
+            config=EngineConfig(ref_video_path="./videos/exercise.mp4")
+        )
+
+    result = user_engines[user_id].process_frame(frame, timestamp_ms)
+    return result.to_dict()  # JSON-serializable
+```
+
+### 5.2 EngineOutput Schema
 
 ```python
 @dataclass
-class AppState:
-    # === Application State ===
-    current_phase: AppPhase = AppPhase.PHASE1_DETECTION
-    is_running: bool = True
-    is_paused: bool = False
-    
-    # === Phase 1: Detection (AUTO TRANSITION) ===
-    pose_detected: bool = False
-    detection_stable_count: int = 0  # Đếm frames stable
-    phase1_countdown_start: float = 0.0  # Thời điểm bắt đầu countdown 3 giây
-    phase1_countdown_active: bool = False  # Đang trong countdown chuyển phase
-    
-    # === Phase 2: Automated Calibration ===
-    selected_joint: Optional[JointType] = None
-    calibration_complete: bool = False
-    user_max_angle: float = 0.0
-    # Automated calibration queue
-    calibration_queue_index: int = 0  # Vị trí hiện tại trong queue
-    calibration_countdown_start: float = 0.0  # Thời điểm bắt đầu countdown
-    is_countdown_active: bool = False  # Đang countdown chuẩn bị
-    is_calibrating_joint: bool = False  # Đang đo khớp hiện tại
-    calibrated_joints: Dict = field(default_factory=dict)  # Dict[JointType, float]
-    all_joints_calibrated: bool = False  # Đã đo xong tất cả 6 khớp
-    
-    # === Phase 3: Sync (MULTI-JOINT) ===
-    sync_state: Optional[SyncState] = None
-    motion_phase: str = "idle"           # idle/eccentric/hold/concentric
-    last_motion_phase: Optional[MotionPhase] = None
-    
-    # Multi-joint tracking
-    user_angles_dict: Dict = field(default_factory=dict)  # Dict[JointType, float]
-    target_angles_dict: Dict = field(default_factory=dict)  # Dict[JointType, float]
-    joint_scores_dict: Dict = field(default_factory=dict)  # Dict[JointType, float]
-    joint_weights: Dict = field(default_factory=dict)  # Dict[JointType, float]
-    active_joints: List = field(default_factory=list)  # Danh sách các khớp hoạt động
-    
-    # === Phase 4: Scoring ===
-    rep_count: int = 0
-    current_score: float = 0.0
-    average_score: float = 0.0
-    
-    # === Common (backward compatible) ===
-    user_angle: float = 0.0  # Primary joint angle
-    target_angle: float = 0.0  # Primary joint target
-    pain_level: str = "NONE"
-    fatigue_level: str = "FRESH"
-    message: str = ""
-    warning: str = ""
+class EngineOutput:
+    current_phase: int           # 1-4
+    phase_name: str              # "detection" | "calibration" | "sync" | "scoring"
+    detection: DetectionOutput   # Phase 1 data
+    calibration: CalibrationOutput  # Phase 2 data
+    sync: SyncOutput             # Phase 3 data
+    final_report: FinalReportOutput  # Phase 4 data
+    timestamp_ms: int
+    error: Optional[str]
+
+    def to_dict(self) -> Dict:
+        return {
+            "phase": self.current_phase,
+            "phase_name": self.phase_name,
+            "detection": self.detection,
+            "calibration": self.calibration,
+            "sync": self.sync,
+            "final_report": self.final_report,
+            "error": self.error
+        }
 ```
 
-### 4.3 Constants & Mappings
+### 5.3 JointError Schema (Multi-joint feedback)
 
 ```python
-# Phím số → JointType (cho manual selection - không dùng nữa trong auto mode)
-JOINT_KEY_MAPPING = {
-    ord('1'): JointType.LEFT_SHOULDER,
-    ord('2'): JointType.RIGHT_SHOULDER,
-    ord('3'): JointType.LEFT_ELBOW,
-    ord('4'): JointType.RIGHT_ELBOW,
-    ord('5'): JointType.LEFT_KNEE,
-    ord('6'): JointType.RIGHT_KNEE,
-}
+@dataclass
+class JointError:
+    joint_name: str          # "Vai trai", "Vai phai", etc. (tieng Viet)
+    joint_type: str          # "left_shoulder", "right_shoulder", etc.
+    user_angle: float        # Goc hien tai cua nguoi dung
+    target_angle: float      # Goc muc tieu
+    error: float             # Sai so tuyet doi (do)
+    error_percent: float     # Sai so tuong doi (%)
+    direction_hint: str      # "raise" | "lower" | "hold" | "ok"
+    score: float             # Diem cua khop nay (0-100)
+    weight: float            # Trong so cua khop trong bai tap
+```
 
-# Tên tiếng Việt của khớp
-JOINT_NAMES = {
-    JointType.LEFT_SHOULDER: "Vai trai",
-    JointType.RIGHT_SHOULDER: "Vai phai",
-    JointType.LEFT_ELBOW: "Khuyu tay trai",
-    JointType.RIGHT_ELBOW: "Khuyu tay phai",
-    JointType.LEFT_KNEE: "Dau goi trai",
-    JointType.RIGHT_KNEE: "Dau goi phai",
-}
+### 5.4 Data Flow (Backend)
 
-# Calibration Queue - thứ tự tự động đo 6 khớp
+```
+Camera -> WebSocket/API -> MemotionEngine -> process_frame()
+       -> EngineOutput.to_dict() -> JSON -> Frontend
+```
+
+---
+
+## 6. DATA STRUCTURES
+
+### 6.1 AppPhase (Enum)
+
+```python
+class AppPhase(Enum):
+    PHASE1_DETECTION = 1
+    PHASE2_CALIBRATION = 2
+    PHASE3_SYNC = 3
+    PHASE4_SCORING = 4
+    COMPLETED = 5
+```
+
+### 6.2 JointType (Enum)
+
+```python
+class JointType(Enum):
+    # Chi tren
+    LEFT_ELBOW = "left_elbow"
+    RIGHT_ELBOW = "right_elbow"
+    LEFT_SHOULDER = "left_shoulder"
+    RIGHT_SHOULDER = "right_shoulder"
+
+    # Chi duoi
+    LEFT_KNEE = "left_knee"
+    RIGHT_KNEE = "right_knee"
+    LEFT_HIP = "left_hip"
+    RIGHT_HIP = "right_hip"
+```
+
+### 6.3 MotionPhase (Enum)
+
+```python
+class MotionPhase(Enum):
+    IDLE = "idle"                  # Tu the nghi
+    ECCENTRIC = "eccentric"        # Pha duoi co
+    HOLD = "hold"                  # Giu tai diem cao trao
+    CONCENTRIC = "concentric"      # Pha co co
+```
+
+### 6.4 Constants
+
+```python
+# Calibration Queue - thu tu tu dong do 6 khop
 CALIBRATION_QUEUE = [
     JointType.LEFT_SHOULDER,
     JointType.RIGHT_SHOULDER,
@@ -577,7 +831,7 @@ CALIBRATION_QUEUE = [
     JointType.RIGHT_KNEE,
 ]
 
-# Hướng dẫn tư thế cho từng loại khớp
+# Huong dan tu the
 JOINT_POSITION_INSTRUCTIONS = {
     JointType.LEFT_SHOULDER: "Moi ba dung NGANG",
     JointType.RIGHT_SHOULDER: "Moi ba dung NGANG",
@@ -587,329 +841,113 @@ JOINT_POSITION_INSTRUCTIONS = {
     JointType.RIGHT_KNEE: "Moi ba dung DOC",
 }
 
-# Countdown durations
-CALIBRATION_COUNTDOWN_DURATION = 5.0  # giây
-PHASE1_COUNTDOWN_DURATION = 3.0  # giây
+# Timing constants
+PHASE1_STABLE_FRAMES_REQUIRED = 30
+PHASE1_COUNTDOWN_DURATION = 3.0  # giay
+CALIBRATION_COUNTDOWN_DURATION = 5.0  # giay
+PHASE2_COMPLETE_DELAY = 2.0  # giay
 
-# Màu sắc motion phase
-PHASE_COLORS = {
-    "idle": (128, 128, 128),       # Gray
-    "eccentric": (0, 255, 255),    # Yellow
-    "hold": (0, 255, 0),           # Green
-    "concentric": (255, 255, 0),   # Cyan
-}
-
-# Tên tiếng Việt của phase
-PHASE_NAMES_VI = {
-    "idle": "Nghi",
-    "eccentric": "Duoi co",
-    "hold": "Giu",
-    "concentric": "Co co",
+# Trong so cho tung loai bai tap
+EXERCISE_WEIGHTS = {
+    "arm_raise": {
+        JointType.LEFT_SHOULDER: 1.0,
+        JointType.RIGHT_SHOULDER: 1.0,
+        JointType.LEFT_ELBOW: 0.6,
+        JointType.RIGHT_ELBOW: 0.6,
+        JointType.LEFT_KNEE: 0.1,
+        JointType.RIGHT_KNEE: 0.1,
+    },
+    "bicep_curl": {
+        JointType.LEFT_ELBOW: 1.0,
+        JointType.RIGHT_ELBOW: 1.0,
+        JointType.LEFT_SHOULDER: 0.5,
+        JointType.RIGHT_SHOULDER: 0.5,
+    },
+    "squat": {
+        JointType.LEFT_KNEE: 1.0,
+        JointType.RIGHT_KNEE: 1.0,
+        JointType.LEFT_HIP: 0.8,
+        JointType.RIGHT_HIP: 0.8,
+    },
 }
 ```
 
 ---
 
-## 5. CLASS MemotionAppV2
+## 7. LUONG HOAT DONG CHI TIET
 
-### 5.1 Constructor
-
-```python
-class MemotionAppV2:
-    DETECTION_STABLE_THRESHOLD = 30  # Frames cần stable
-    PHASE1_COUNTDOWN_DURATION = 3.0  # 3 giây countdown Phase 1 → 2
-    WINDOW_NAME = "MEMOTION - He thong ho tro phuc hoi chuc nang"
-    
-    def __init__(
-        self,
-        detector: VisionDetector,           # MediaPipe detector
-        ref_video_path: Optional[str],      # Đường dẫn video mẫu
-        default_joint: JointType,           # Khớp mặc định (primary)
-        log_dir: str = "./data/logs",       # Thư mục logs
-        models_dir: str = "./models"        # Thư mục models
-    ):
-        # State
-        self._state = AppState()
-        
-        # Components
-        self._video_engine: Optional[VideoEngine]
-        self._sync_controller: Optional[MotionSyncController]
-        self._calibrator = SafeMaxCalibrator(duration_ms=5000)
-        self._pain_detector = PainDetector()
-        self._scorer = HealthScorer()
-        self._logger = SessionLogger(log_dir)
-        self._user_profile: Optional[UserProfile] = None
-        
-        # Reference video detector
-        self._ref_detector: Optional[VisionDetector] = None
-        
-        # Data tracking
-        self._user_angles: List[float] = []
-        self._ref_angles: List[float] = []
-        self._score_history: List[float] = []
-        self._current_landmarks: Optional[np.ndarray] = None
-        self._ref_landmarks: Optional[np.ndarray] = None
-        
-        # Analysis queue (for async pain detection)
-        self._analysis_queue = Queue(maxsize=5)
-        
-        # Interpolated target
-        self._last_target_angle: float = 0.0
-```
-
-### 5.2 Core Methods
-
-| Method | Mô tả |
-|--------|-------|
-| `run(user_source, display)` | Main loop chính |
-| `_run_phase1(frame, result)` | Phase 1 với auto transition |
-| `_run_phase2(frame, result, timestamp_ms)` | Phase 2 automated calibration |
-| `_run_phase3(user_frame, ref_frame, result, timestamp)` | Phase 3 multi-joint |
-| `_run_phase4(frame)` | Phase 4 kết quả |
-| `_create_phase3_dashboard(height)` | Tạo dashboard multi-joint |
-| `_handle_key(key)` | Xử lý phím nhấn |
-| `_advance_phase()` | Manual override chuyển phase |
-| `_transition_to_phase2/3/4()` | Chuyển đổi phase |
-| `_start_calibration_for_joint(joint_type)` | Bắt đầu đo một khớp |
-| `_finish_calibration_for_joint(joint_type)` | Hoàn thành đo một khớp |
-| `_save_calibration_to_profile()` | Lưu profile calibration |
-| `_on_rep_complete()` | Khi hoàn thành 1 rep |
-| `_restart()` | Reset về Phase 1 |
-| `cleanup()` | Dọn dẹp tài nguyên |
-
-### 5.3 Multi-joint Helper Methods
-
-```python
-# Tính target angle cho MỘT khớp (với scaling)
-def _interpolate_target_angle(
-    self, current_frame, total_frames, joint_type=None
-) -> float
-
-# Tính target cho TẤT CẢ các khớp
-def _interpolate_all_joint_targets(
-    self, current_frame, total_frames
-) -> Dict[JointType, float]
-
-# Tính điểm real-time cho MỘT khớp
-def _calculate_realtime_score(
-    self, user_angle, target_angle
-) -> float
-
-# Tính điểm trung bình có trọng số
-def _calculate_multi_joint_score(self) -> float
-
-# Tính góc TẤT CẢ các khớp từ landmarks
-def _calculate_all_joint_angles(
-    self, landmarks
-) -> Dict[JointType, float]
-
-# Lấy tọa độ pixel của 3 điểm góc
-def _get_joint_pixel_coords(
-    self, landmarks, joint_type, frame_shape
-) -> Tuple
-
-# Khởi tạo detector cho video mẫu
-def _init_ref_detector(self) -> None
-
-# Xử lý pain detection
-def _process_pain(self) -> None
-
-# Tạo báo cáo cuối
-def _generate_report(self) -> Dict
-```
-
----
-
-## 6. LUỒNG HOẠT ĐỘNG CHI TIẾT
-
-### 6.1 Main Loop Flow (AUTO TRANSITION)
+### 7.1 Main Loop Flow
 
 ```python
 def run(self, user_source="webcam", display=True):
-    # 1. Mở camera/video
     cap = cv2.VideoCapture(...)
-    
-    # 2. Init reference detector
-    self._init_ref_detector()
-    
-    # 3. Print banner (chế độ tự động)
-    print("CHE DO TU DONG - Khong can nhan ENTER")
-    print("  1. Nhan dien tu the -> Tu dong chuyen sau 3 giay")
-    print("  2. Do gioi han 6 khop -> Tu dong chuyen sau 2 giay")
-    print("  3. Dong bo video mau -> Tu dong chuyen khi hoan tat")
-    print("  4. Cham diem va phan tich")
-    
-    # 4. Main loop
-    while self._state.is_running:
+
+    while is_running:
         ret, frame = cap.read()
-        if user_source == "webcam":
-            frame = cv2.flip(frame, 1)  # Mirror
-        
+        timestamp_ms = int(time.time() * 1000)
+
         # Process detection
-        result = self._detector.process_frame(frame, timestamp_ms)
-        
-        # Handle current phase (AUTO TRANSITIONS inside each phase)
+        result = detector.process_frame(frame, timestamp_ms)
+
+        # Routing den phase hien tai
         if current_phase == PHASE1_DETECTION:
             display_frame = self._run_phase1(frame, result)
-            # → Auto transition sau 3 giây countdown
-        
+
         elif current_phase == PHASE2_CALIBRATION:
             display_frame = self._run_phase2(frame, result, timestamp_ms)
-            # → Auto transition sau khi đo xong 6 khớp + 2 giây
-        
+
         elif current_phase == PHASE3_SYNC:
-            # Get reference frame
-            ref_frame, ref_status = self._video_engine.get_frame()
-            
-            # Check rep completion
-            if last_phase == CONCENTRIC and current_phase == IDLE:
-                self._on_rep_complete()
-            
-            # Check video finished
-            if ref_status.state == PlaybackState.FINISHED:
-                self._transition_to_phase4()  # Auto transition
-            
+            ref_frame, ref_status = video_engine.get_frame()
             display_frame = self._run_phase3(frame, ref_frame, result, timestamp)
-        
+
         elif current_phase == PHASE4_SCORING:
             display_frame = self._run_phase4(frame)
-        
+
         # Display & handle key
         cv2.imshow(WINDOW_NAME, display_frame)
         key = cv2.waitKey(1) & 0xFF
         self._handle_key(key)
-    
-    # Cleanup
-    cap.release()
+
     return self._generate_report()
 ```
 
-### 6.2 Transition to Phase 3 (Multi-joint Setup)
-
-```python
-def _transition_to_phase3(self):
-    # 1. Check video mẫu exists
-    if not ref_video_path:
-        _transition_to_phase4()
-        return
-    
-    # 2. Setup video engine
-    self._video_engine = VideoEngine(ref_video_path)
-    
-    # 3. Xác định loại bài tập
-    if primary_joint in (LEFT_ELBOW, RIGHT_ELBOW):
-        exercise_type = "bicep_curl"
-    elif primary_joint in (LEFT_KNEE, RIGHT_KNEE):
-        exercise_type = "squat"
-    else:
-        exercise_type = "arm_raise"
-    
-    # 4. Lấy trọng số cho từng khớp
-    joint_weights = create_exercise_weights(exercise_type)
-    
-    # 5. Xác định active joints (từ calibrated_joints)
-    active_joints = list(calibrated_joints.keys())
-    
-    # 6. Khởi tạo dictionaries
-    user_angles_dict = {jt: 0.0 for jt in active_joints}
-    target_angles_dict = {jt: 0.0 for jt in active_joints}
-    joint_scores_dict = {jt: 0.0 for jt in active_joints}
-    
-    # 7. Create exercise với max_angle từ calibration
-    exercise = create_arm_raise_exercise(total_frames, fps, max_angle)
-    
-    # 8. Setup sync controller
-    sync_controller = MotionSyncController(exercise, user_max_angle=max_angle)
-    
-    # 9. Start session
-    logger.start_session(session_id, exercise.name)
-    scorer.start_session(exercise.name, session_id)
-    
-    # 10. Print setup info
-    print(f"[SETUP] Active joints ({len(active_joints)}):")
-    for jt in active_joints:
-        print(f"  - {JOINT_NAMES[jt]}: max={angle:.1f}do, weight={weight:.2f}")
-```
-
-### 6.3 Rep Completion Flow
+### 7.2 Rep Completion Flow
 
 ```python
 def _on_rep_complete(self):
-    # 1. Compute DTW nếu đủ data
+    # 1. Compute DTW neu du data
     if len(user_angles) > 20 and len(ref_angles) > 20:
         dtw_result = compute_single_joint_dtw(
             user_angles[-50:],
             ref_angles[-50:]
         )
-    
+
     # 2. Complete rep trong scorer
-    rep_score = self._scorer.complete_rep(target, dtw_result)
-    
-    # 3. Log kết quả
-    self._logger.log_rep(
+    rep_score = scorer.complete_rep(target, dtw_result)
+
+    # 3. Log ket qua
+    logger.log_rep(
         rep_score.rep_number,
         {rom, stability, flow, total},
         jerk_value,
         duration_ms
     )
-    
-    # 4. Print console
-    print(f"[REP {rep_number}] Score: {total_score}")
-```
-
-### 6.4 Key Handling Flow (Simplified for Auto Mode)
-
-```python
-def _handle_key(self, key):
-    if key == 'q' or ESC:
-        is_running = False
-    
-    elif key == ENTER:
-        # Manual override - bỏ qua countdown
-        _advance_phase()
-    
-    elif key == SPACE:
-        # Phase 3: Pause/Resume video
-        if PHASE3_SYNC:
-            is_paused = toggle
-    
-    elif key == 'r':
-        _restart()  # Reset về Phase 1
-    
-    # Note: Phím 1-6 không còn dùng trong auto calibration mode
 ```
 
 ---
 
-## 7. PHÍM ĐIỀU KHIỂN
-
-| Phím | Phase | Chức năng |
-|------|-------|-----------|
-| `ENTER` | 1 | Manual override - bỏ qua countdown 3 giây |
-| `ENTER` | 2 | Không dùng (auto calibration) |
-| `SPACE` | 3 | Pause/Resume video |
-| `R` | All | Restart về Phase 1 |
-| `Q` / `ESC` | All | Thoát ứng dụng |
-
-**Lưu ý**: Trong chế độ AUTO TRANSITION:
-- Phase 1 → 2: Tự động sau 3 giây khi pose_detected
-- Phase 2 → 3: Tự động sau 2 giây khi đo xong 6 khớp
-- Phase 3 → 4: Tự động khi video kết thúc
-
----
-
-## 8. CÔNG THỨC TÍNH ĐIỂM
+## 8. CONG THUC TINH DIEM
 
 ### 8.1 Real-time Score (Single Joint)
 
 ```python
-def _calculate_realtime_score(self, user_angle, target_angle):
+def _calculate_realtime_score(user_angle, target_angle):
     if target_angle <= 0:
-        return current_score  # Giữ nguyên
-    
+        return current_score
+
     error = abs(user_angle - target_angle)
     error_percent = (error / target_angle) * 100
-    
+
     if error_percent < 5:
         score = 100.0
     elif error_percent < 10:
@@ -922,72 +960,96 @@ def _calculate_realtime_score(self, user_angle, target_angle):
         score = 65.0 - (error_percent - 25) * 1.0  # 65-50
     else:
         score = max(0, 50.0 - (error_percent - 40) * 0.5)
-    
+
     return max(0, min(100, score))
 ```
 
-**Score mapping table**:
+**Bang chuyen doi**:
 ```
-┌──────────────────┬───────────────┬────────────┐
-│ Error Percent    │ Score Range   │ Feedback   │
-├──────────────────┼───────────────┼────────────┤
-│ < 5%             │ 100           │ TUYET VOI! │
-│ 5% - 10%         │ 95 - 90       │ TOT!       │
-│ 10% - 15%        │ 90 - 80       │ TOT!       │
-│ 15% - 25%        │ 80 - 65       │ KHA        │
-│ 25% - 40%        │ 65 - 50       │ DIEU CHINH │
-│ > 40%            │ < 50          │ DIEU CHINH │
-└──────────────────┴───────────────┴────────────┘
++------------------+---------------+------------+
+| Error Percent    | Score Range   | Feedback   |
++------------------+---------------+------------+
+| < 5%             | 100           | TUYET VOI! |
+| 5% - 10%         | 95 - 90       | TOT!       |
+| 10% - 15%        | 90 - 80       | TOT!       |
+| 15% - 25%        | 80 - 65       | KHA        |
+| 25% - 40%        | 65 - 50       | DIEU CHINH |
+| > 40%            | < 50          | DIEU CHINH |
++------------------+---------------+------------+
 ```
 
 ### 8.2 Multi-joint Weighted Score
 
 ```python
-def _calculate_multi_joint_score(self):
-    """Tính điểm trung bình có trọng số."""
-    total_weighted_score = 0.0
-    total_weight = 0.0
-    
-    for joint_type in active_joints:
-        user_angle = user_angles_dict[joint_type]
-        target_angle = target_angles_dict[joint_type]
-        weight = joint_weights.get(joint_type, 0.5)
-        
-        joint_score = _calculate_realtime_score(user_angle, target_angle)
-        joint_scores_dict[joint_type] = joint_score
-        
-        total_weighted_score += joint_score * weight
-        total_weight += weight
-    
-    if total_weight > 0:
-        return total_weighted_score / total_weight
-    return current_score
-
-# Weighted Score = Σ(joint_score × weight) / Σ(weight)
+Weighted Score = sum(joint_score_i * weight_i) / sum(weight_i)
 ```
 
-### 8.3 Score Smoothing
+### 8.3 Final Score (tu HealthScorer)
 
 ```python
-# Để tránh score nhảy quá nhanh
-current_score = 0.7 * current_score + 0.3 * realtime_score
+SCORE_WEIGHTS = {
+    "rom": 0.30,           # ROM Score
+    "stability": 0.20,     # Stability Score
+    "flow": 0.20,          # Flow Score (tu DTW)
+    "symmetry": 0.15,      # Symmetry Score
+    "compensation": 0.15,  # Compensation Score (tru diem neu bu tru)
+}
+
+Total Score = sum(component_score * weight)
 ```
 
-### 8.4 Final Score (từ HealthScorer)
+### 8.4 ROM Score (Chi tiet)
 
 ```python
-Total Score = weighted_sum(
-    ROM Score × 0.30,
-    Stability Score × 0.20,
-    Flow Score × 0.20,
-    Symmetry Score × 0.15,
-    Compensation Score × 0.15
-)
+def _calculate_rom_score(angles, target):
+    # 1. Max angle score (40%)
+    max_achieved = np.max(angles)
+    max_score = min(100.0, (max_achieved / target) * 100)
+
+    # 2. Hold time score - thoi gian giu >= 80% target (30%)
+    threshold = target * 0.8
+    frames_above_threshold = np.sum(angles >= threshold)
+    hold_score = min(1.0, frames_above_threshold / min_frames_required) * 100
+
+    # 3. Peak quality score - kiem tra dat goc co on dinh khong (30%)
+    peak_std = np.std(peak_region)
+    peak_quality_score = max(0, 100 - peak_std * 5)
+
+    # Tong hop
+    final_score = 0.40 * max_score + 0.30 * hold_score + 0.30 * peak_quality_score
+
+    return final_score
+```
+
+### 8.5 Stability Score (Chi tiet)
+
+```python
+def _calculate_stability_score(angles, phases):
+    # Loc ra cac goc trong pha HOLD
+    hold_angles = [angles[i] for i in range(len(phases)) if phases[i] == HOLD]
+
+    # 1. Standard deviation score (50%)
+    std = np.std(hold_angles)
+    std_score = max(0, 100 - std * 10)  # std < 2 = 100, std > 10 = 0
+
+    # 2. Oscillation count - so lan dao dong vuot nguong (30%)
+    deviations = np.abs(hold_angles - np.mean(hold_angles))
+    crossings = np.sum(deviations > 3.0)  # 3 do
+    oscillation_score = (1 - crossings / max_crossings) * 100
+
+    # 3. Drift score - goc co giam dan khong (dau hieu met) (20%)
+    drift = np.mean(first_half) - np.mean(second_half)
+    drift_score = (1 - min(1.0, drift / 5.0)) * 100
+
+    # Tong hop
+    final_score = 0.50 * std_score + 0.30 * oscillation_score + 0.20 * drift_score
+
+    return final_score
 ```
 
 ---
 
-## 9. HƯỚNG DẪN SỬ DỤNG
+## 9. HUONG DAN SU DUNG
 
 ### 9.1 Command Line Arguments
 
@@ -996,168 +1058,65 @@ python main_v2.py [OPTIONS]
 
 Options:
   --source      Input source (default: "webcam")
-                Có thể là: webcam, path/to/video.mp4
-  
-  --ref-video   Đường dẫn video mẫu
-                Bắt buộc cho Phase 3
-  
-  --joint       Khớp mặc định để theo dõi
+                Co the la: webcam, path/to/video.mp4
+
+  --ref-video   Duong dan video mau
+                Bat buoc cho Phase 3
+
+  --joint       Khop mac dinh de theo doi
                 Choices: left_shoulder, right_shoulder,
                          left_elbow, right_elbow,
                          left_knee, right_knee
                 Default: left_shoulder
-  
-  --mode        Chế độ chạy
+
+  --mode        Che do chay
                 Choices: run, test
                 Default: run
-  
-  --headless    Chạy không hiển thị UI
-  
-  --models-dir  Thư mục chứa model files
+
+  --headless    Chay khong hien thi UI
+
+  --models-dir  Thu muc chua model files
                 Default: ./models
-  
-  --log-dir     Thư mục lưu logs
+
+  --log-dir     Thu muc luu logs
                 Default: ./data/logs
 ```
 
-### 9.2 Ví dụ sử dụng
+### 9.2 Vi du su dung
 
 ```bash
-# Chạy với webcam và video mẫu
+# Chay voi webcam va video mau
 python main_v2.py --source webcam --ref-video videos/arm_raise.mp4
 
-# Chạy với video input
+# Chay voi video input
 python main_v2.py --source path/to/user.mp4 --ref-video videos/arm_raise.mp4
 
-# Chạy với khớp khuỷu tay
+# Chay voi khop khuyu tay
 python main_v2.py --source webcam --ref-video videos/elbow.mp4 --joint left_elbow
 
-# Chạy test mode
-python main_v2.py --mode test
-
-# Chạy headless (không UI)
-python main_v2.py --source webcam --ref-video videos/arm_raise.mp4 --headless
-```
-
-### 9.3 Yêu cầu model files
-
-Đảm bảo có các file trong `./models/`:
-```
-models/
-├── pose_landmarker_lite.task    # Bắt buộc
-└── face_landmarker.task         # Tùy chọn (cho pain detection)
-```
-
----
-
-## 10. UNIT TESTS
-
-### 10.1 Chạy tests
-
-```bash
+# Chay test mode
 python main_v2.py --mode test
 ```
 
-### 10.2 Test Cases
+### 9.3 Phim dieu khien
 
-```python
-def run_unit_tests():
-    # TEST 1: Visualization
-    # - put_vietnamese_text
-    # - draw_skeleton
-    
-    # TEST 2: SafeMaxCalibrator
-    # - Khởi tạo state = IDLE
-    
-    # TEST 3: PainDetector
-    # - Khởi tạo thành công
-    
-    # TEST 4: HealthScorer
-    # - start_session
-    # - add_frame (20 frames)
-    # - complete_rep
-    # - Verify score
-    
-    # TEST 5: MotionSyncController
-    # - create_arm_raise_exercise
-    # - update()
-    # - Verify phase
-```
-
-### 10.3 Expected Output
-
-```
-============================================================
-UNIT TESTS - MEMOTION v2.0
-============================================================
-
-[TEST 1] Visualization...
-  OK - Vietnamese text
-
-[TEST 2] SafeMaxCalibrator...
-  OK - Calibrator
-
-[TEST 3] PainDetector...
-  OK - PainDetector
-
-[TEST 4] HealthScorer...
-  OK - Score: 85.2
-
-[TEST 5] MotionSyncController...
-  OK - Phase: eccentric
-
-============================================================
-ALL TESTS PASSED!
-============================================================
-```
+| Phim | Phase | Chuc nang |
+|------|-------|-----------|
+| `ENTER` | 1 | Manual override - bo qua countdown 3 giay |
+| `SPACE` | 3 | Pause/Resume video |
+| `R` | All | Restart ve Phase 1 |
+| `Q` / `ESC` | All | Thoat ung dung |
 
 ---
 
-## 📝 CHANGELOG
+## REFERENCES
 
-### Version 2.0.0 (Current)
-- **AUTO TRANSITION**: Tự động chuyển phase không cần nhấn ENTER
-  - Phase 1 → 2: Countdown 3 giây
-  - Phase 2 → 3: 2 giây sau khi đo xong
-  - Phase 3 → 4: Khi video kết thúc
-- **Automated Calibration**: Tự động đo 6 khớp theo thứ tự
-  - Countdown 5 giây chuẩn bị mỗi khớp
-  - Hướng dẫn tư thế theo loại khớp
-  - Lưu profile vào `./data/user_profiles/`
-- **Multi-joint Tracking**: Theo dõi và tính điểm tất cả khớp
-  - Weighted scoring theo loại bài tập
-  - Chi tiết điểm từng khớp trên dashboard
-- UI rõ ràng hơn với panels và progress bars
-- Real-time scoring với visual feedback
-- Target angle interpolation (per joint)
-- Score smoothing để tránh nhảy
-- Direction hints (nâng cao/hạ thấp)
-- Vietnamese feedback text
-
-### So sánh với main_final.py
-
-| Feature | main_final.py | main_v2.py |
-|---------|---------------|------------|
-| Phase transition | Manual (ENTER) | **Auto** với countdown |
-| Calibration | Chọn 1 khớp | **Tự động 6 khớp** |
-| Joint tracking | Single joint | **Multi-joint** |
-| Scoring | Single joint | **Weighted multi-joint** |
-| Phase separation | Basic | Clear UI cho mỗi phase |
-| Real-time score | Từ scorer | Interpolated + smoothed |
-| Target angle | Từ checkpoint | Interpolated per joint |
-| Visual feedback | Basic | Colors + text + banners |
-| Vietnamese UI | Partial | Full |
+- `PROJECT_CONTEXT.md` - Context cho Claude Code
+- `.cursorrules` - Quy tac code
+- `core/` - Module cot loi
+- `modules/` - Module chuc nang
+- `mediapipe_be/` - Backend integration
 
 ---
 
-## 🔗 REFERENCES
-
-- [main_context.md](main_context.md) - Tài liệu tổng quan hệ thống
-- [README1.md](README1.md) - Hướng dẫn cơ bản
-- [core/](core/) - Module cốt lõi
-- [modules/](modules/) - Module chức năng
-- [utils/](utils/) - Tiện ích
-
----
-
-> **Note**: Tài liệu này mô tả chi tiết file `main_v2.py` (1788 lines). Xem `main_context.md` để hiểu tổng quan về toàn bộ hệ thống MEMOTION.
+> **Note**: Tai lieu nay mo ta chi tiet ve luong hoat dong, thuat toan su dung, va logic code cua MEMOTION v2.0.
